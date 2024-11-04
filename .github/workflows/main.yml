@@ -129,7 +129,6 @@ jobs:
       - name: Add Rust to path
         run: . "$HOME/.cargo/env"
       - name: Install cargo-deb and build .deb package
-        working-directory: ./modules/cli
         run: |
           cargo install cargo-deb
           cargo deb
@@ -159,13 +158,10 @@ jobs:
         run: |
           cargo install cargo-generate-rpm
           RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --target x86_64-unknown-linux-gnu
-        working-directory: modules/cli
       - name: Build .rpm package
         run: cargo generate-rpm --payload-compress=gzip
-        working-directory: ./modules/cli
       # - name: remove stubbed release number from .rpm file name
       #   run: mv ./target/generate-rpm/apicize-run-${{needs.init.outputs.version}}-999.x86_64.rpm ./target/generate-rpm/apicize-run-${{needs.init.outputs.version}}.x86_64.rpm
-      #   working-directory: ./modules/cli
       - name: Add .rpm package to release
         uses: softprops/action-gh-release@v2
         env:
