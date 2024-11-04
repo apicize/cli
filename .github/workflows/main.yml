@@ -116,6 +116,8 @@ jobs:
   publish-cli-deb:
     name: Release apicize-run as .deb
     runs-on: Ubuntu-22.04
+    permissions:
+      contents: write
     needs:
       - init
       - lint
@@ -145,6 +147,8 @@ jobs:
   publish-cli-rpm:
     name: Release apicize-run as .rpm
     runs-on: Ubuntu-22.04
+    permissions:
+      contents: write
     needs:
       - init
       - lint
