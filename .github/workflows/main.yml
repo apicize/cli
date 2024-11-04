@@ -1,0 +1,175 @@
+name: 'publish'
+
+on:
+  push:
+    tags:
+      - '*'
+
+
+jobs:
+  init:
+    name: Initialize project
+    runs-on: ubuntu-latest
+    outputs:
+        version: ${{ steps.getversion.outputs.version }}
+    steps:
+      - id: getversion
+        run: sed -nE  "s/^\s*version\s*=\s*\"(.*)\"\s*$/\1/p" Cargo.toml >> "$GITHUB_OUTPUT"
+
+  # init:
+  #   name: Initialize project and build environment
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout project
+  #       uses: actions/checkout@v4
+  #     - name: Install Rust
+  #       run: |
+  #         curl https://sh.rustup.rs -sSf | sh -s -- -y
+  #     - name: Cache initialized setup
+  #       uses: actions/cache/save@v4
+  #       with:
+  #         path: |
+  #           ./*
+  #           $HOME/.cargo/*
+  #         key: ${{ runner.os }}-apicize-lib
+
+  lint:
+    name: Lint (Clippy)
+    runs-on: ubuntu-latest
+    needs: init
+    steps:
+      # - name: Restore initialized setup
+      #   uses: actions/cache/restore@v4
+      #   with:
+      #     path: |
+      #       ./*
+      #       $HOME/.cargo/*
+      #     key: ${{ runner.os }}-apicize-lib
+      #     fail-on-cache-miss: true
+      - name: Checkout project
+        uses: actions/checkout@v4
+      - name: Install Rust
+        run: |
+          curl https://sh.rustup.rs -sSf | sh -s -- -y
+      - name: Add Rust to path
+        run: . "$HOME/.cargo/env"
+      - name: Run lint
+        run: cargo clippy
+
+  test:
+    name: Unit testing
+    runs-on: ubuntu-latest
+    needs: init
+    steps:
+      # - name: Restore initialized setup
+      #   uses: actions/cache/restore@v4
+      #   with:
+      #     path: |
+      #       ./*
+      #       $HOME/.cargo/*
+      #     key: ${{ runner.os }}-apicize-lib
+      #     fail-on-cache-miss: true
+      - name: Checkout project
+        uses: actions/checkout@v4
+      - name: Install Rust
+        run: |
+          curl https://sh.rustup.rs -sSf | sh -s -- -y
+      - name: Add Rust to path
+        run: . "$HOME/.cargo/env"
+      - name: Run unit test
+        run: cargo test
+     
+
+  # publish-crate:
+  #   name: Publish Crate
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     contents: write
+  #   needs: 
+  #     - 'lint'
+  #     - 'test'
+  #   steps:
+  #     # - name: Restore initialized setup
+  #     #   uses: actions/cache/restore@v4
+  #     #   with:
+  #     #     path: |
+  #     #       ./*
+  #     #       $HOME/.cargo/*
+  #     #     key: ${{ runner.os }}-apicize-lib
+  #     #     fail-on-cache-miss: true
+  #     - name: Checkout project
+  #       uses: actions/checkout@v4
+  #     - name: Install Rust
+  #       run: |
+  #         curl https://sh.rustup.rs -sSf | sh -s -- -y
+  #     - name: Add Rust to path
+  #       run: . "$HOME/.cargo/env"
+  #     - name: Build the project
+  #       run: cargo build --release
+  #     - name: Publish to crates.io
+  #       env:
+  #         CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+  #       run: cargo publish
+
+  publish-cli-deb:
+    name: Release apicize-run as .deb
+    runs-on: Ubuntu-22.04
+    needs:
+      - init
+      - lint
+      - test
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+      - name: Install Rust and cargo-deb
+        run: |
+          curl https://sh.rustup.rs -sSf | sh -s -- -y
+      - name: Add Rust to path
+        run: . "$HOME/.cargo/env"
+      - name: Install cargo-deb and build .deb package
+        working-directory: ./modules/cli
+        run: |
+          cargo install cargo-deb
+          cargo deb
+      - name: Add .deb package to release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          name: 'Apicize ${{needs.init.outputs.version}}'
+          tag_name: 'apicize-v${{needs.init.outputs.version}}'
+          files: ./modules/cli/target/debian/Apicize-run_${{needs.init.outputs.version}}_amd64.deb
+
+  publish-cli-rpm:
+    name: Release apicize-run as .rpm
+    runs-on: Ubuntu-22.04
+    needs:
+      - init
+      - lint
+      - test
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+      - name: Install rust
+        run: curl https://sh.rustup.rs -sSf | sh -s -- -y
+      - name: Install cargo-generate-rpm and build application
+        run: |
+          cargo install cargo-generate-rpm
+          RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --target x86_64-unknown-linux-gnu
+        working-directory: modules/cli
+      - name: Build .rpm package
+        run: cargo generate-rpm --payload-compress=gzip
+        working-directory: ./modules/cli
+      # - name: remove stubbed release number from .rpm file name
+      #   run: mv ./target/generate-rpm/apicize-run-${{needs.init.outputs.version}}-999.x86_64.rpm ./target/generate-rpm/apicize-run-${{needs.init.outputs.version}}.x86_64.rpm
+      #   working-directory: ./modules/cli
+      - name: Add .rpm package to release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          name: 'Apicize ${{needs.init.outputs.version}}'
+          tag_name: 'apicize-v${{needs.init.outputs.version}}'
+          files: ./modules/cli/./target/generate-rpm/Apicize-run-${{needs.init.outputs.version}}-1.x86_64.rpm

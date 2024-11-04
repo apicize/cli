@@ -1,0 +1,21 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "cargo",
+			"command": "build",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"label": "rust: build cli",
+			"problemMatcher": {
+				"base": "$rustc",
+				"fileLocation": "autoDetect"
+			}
+		},
+	]
+}
