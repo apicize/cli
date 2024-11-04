@@ -16,7 +16,7 @@ jobs:
       - name: Checkout project
         uses: actions/checkout@v4
       - id: getversion
-        run: sed -nE  "s/^\s*version\s*=\s*\"(.*)\"\s*$/\1/p" Cargo.toml >> "$GITHUB_OUTPUT"
+        run: sed -nE  "s/^\s*version\s*=\s*\"(.*)\"\s*$/version=\1/p" Cargo.toml >> "$GITHUB_OUTPUT"
 
   # init:
   #   name: Initialize project and build environment
