@@ -141,8 +141,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         with:
           name: 'Apicize ${{needs.init.outputs.version}}'
-          tag_name: 'apicize-v${{needs.init.outputs.version}}'
-          files: ./modules/cli/target/debian/Apicize-run_${{needs.init.outputs.version}}_amd64.deb
+          tag_name: 'apicize-ui-v${{needs.init.outputs.version}}'
+          files: ./target/debian/Apicize-run_${{needs.init.outputs.version}}_amd64.deb
 
   publish-cli-rpm:
     name: Release apicize-run as .rpm
@@ -173,5 +173,6 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         with:
           name: 'Apicize ${{needs.init.outputs.version}}'
-          tag_name: 'apicize-v${{needs.init.outputs.version}}'
-          files: ./modules/cli/./target/generate-rpm/Apicize-run-${{needs.init.outputs.version}}-1.x86_64.rpm
+          tag_name: 'apicize-ui-v${{needs.init.outputs.version}}'
+          files: ./target/generate-rpm/Apicize-run-${{needs.init.outputs.version}}-1.x86_64.rpm
+x
