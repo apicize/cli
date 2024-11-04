@@ -140,8 +140,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          name: 'Apicize ${{needs.init.outputs.version}}'
-          tag_name: 'cli-v${{needs.init.outputs.version}}'
+          name: 'Apicize CLI ${{needs.init.outputs.version}}'
+          tag_name: 'apicize-cli-v${{needs.init.outputs.version}}'
           files: ./target/debian/Apicize-run_${{needs.init.outputs.version}}_amd64.deb
 
   publish-cli-rpm:
@@ -172,6 +172,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          name: 'Apicize ${{needs.init.outputs.version}}'
-          tag_name: 'cli-v${{needs.init.outputs.version}}'
+          name: 'Apicize CLI ${{needs.init.outputs.version}}'
+          tag_name: 'apicize-cli-v${{needs.init.outputs.version}}'
           files: ./target/generate-rpm/Apicize-run-${{needs.init.outputs.version}}-1.x86_64.rpm
