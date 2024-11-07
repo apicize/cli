@@ -1,7 +1,7 @@
 use apicize_lib::apicize::{ApicizeExecution, ApicizeExecutionItem};
 use apicize_lib::settings::ApicizeSettings;
-use apicize_lib::{open_data_stream, test_runner, Parameters, Warnings, Workspace};
 use apicize_lib::test_runner::cleanup_v8;
+use apicize_lib::{open_data_stream, test_runner, ApicizeError, Parameters, Warnings, Workspace};
 use clap::Parser;
 use colored::Colorize;
 use num_format::{SystemLocale, ToFormattedString};
@@ -104,7 +104,10 @@ fn render_execution_item(
                     .unwrap();
                 }
 
-                if let Some(test_results) = &run.tests {
+                if let Some(error) = &run.error {
+                    let test_prefix1 = format!("{:width$}", "", width = (run_level + 1) * 3);
+                    print!("{}{}", test_prefix1, &error.to_string().red());
+                } else if let Some(test_results) = &run.tests {
                     let test_prefix1 = format!("{:width$}", "", width = (run_level + 1) * 3);
                     let test_prefix2 = format!("{:width$}", "", width = (run_level + 2) * 3);
                     for result in test_results {
@@ -136,7 +139,7 @@ fn render_execution_item(
 }
 
 fn process_execution(
-    execution_result: &Result<ApicizeExecution, String>,
+    execution_result: &Result<ApicizeExecution, ApicizeError>,
     level: usize,
     locale: &SystemLocale,
     feedback: &mut Box<dyn Write>,
@@ -150,6 +153,7 @@ fn process_execution(
                 .iter()
                 .for_each(|i| render_execution_item(i, 0, locale, feedback));
 
+            writeln!(feedback).unwrap();
             writeln!(feedback).unwrap();
             writeln!(
                 feedback,
@@ -242,7 +246,13 @@ fn process_execution(
         }
         Err(err) => {
             let padding = format!("{:width$}", "", width = level * 3);
-            writeln!(feedback, "{}{}", padding, err.red()).unwrap();
+            writeln!(
+                feedback,
+                "{}{}",
+                padding,
+                format!("{}: {}", err.get_label(), err).red()
+            )
+            .unwrap();
             failure_count = 1;
         }
     }
@@ -405,7 +415,8 @@ async fn main() {
 
     let shared_workspace = Arc::new(workspace);
     for run_number in 0..args.runs {
-        let mut executions: HashMap<String, Result<ApicizeExecution, String>> = HashMap::new();
+        let mut executions: HashMap<String, Result<ApicizeExecution, ApicizeError>> =
+            HashMap::new();
         if args.runs > 1 {
             writeln!(feedback).unwrap();
             writeln!(
@@ -451,7 +462,7 @@ async fn main() {
         )
         .unwrap();
 
-        let execution_values: Vec<Result<ApicizeExecution, String>> =
+        let execution_values: Vec<Result<ApicizeExecution, ApicizeError>> =
             executions.into_values().collect();
         for execution in &execution_values {
             writeln!(feedback).unwrap();
@@ -493,5 +504,5 @@ async fn main() {
 
 #[derive(Serialize)]
 struct OutputFile {
-    pub runs: HashMap<usize, Vec<Result<ApicizeExecution, String>>>,
+    pub runs: HashMap<usize, Vec<Result<ApicizeExecution, ApicizeError>>>,
 }
