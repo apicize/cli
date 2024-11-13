@@ -19,18 +19,18 @@ use std::{fs, process};
 struct Args {
     /// Name of the file to process (or - to read STDIN)
     file: String,
-    /// Global parameter file name (overriding default location, if available)
-    #[arg(short, long)]
-    globals: Option<String>,
-    /// Print configuration information
-    #[arg(short, long, default_value_t = false)]
-    info: bool,
     /// Number of times to run workbook (runs are sequential)
     #[arg(short, long, default_value_t = 1)]
     runs: usize,
     /// Name of the output file name for test results (or - to write to STDOUT)
     #[arg(short, long)]
     output: Option<String>,
+    /// Global parameter file name (overriding default location, if available)
+    #[arg(short, long)]
+    globals: Option<String>,
+    /// Print configuration information
+    #[arg(short, long, default_value_t = false)]
+    info: bool,
 }
 
 fn duration_to_ms(d: u128, locale: &SystemLocale) -> String {
@@ -447,6 +447,7 @@ async fn main() {
                     Some(vec![request_id.clone()]),
                     None,
                     arc_test_started.clone(),
+                    None,
                 )
                 .await;
 
