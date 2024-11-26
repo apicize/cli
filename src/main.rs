@@ -106,7 +106,7 @@ fn render_execution_item(
 
                 if let Some(error) = &run.error {
                     let test_prefix1 = format!("{:width$}", "", width = (run_level + 1) * 3);
-                    print!("{}{}", test_prefix1, &error.to_string().red());
+                    writeln!(feedback, "{}{}", test_prefix1, &error.to_string().red()).unwrap();
                 } else if let Some(test_results) = &run.tests {
                     let test_prefix1 = format!("{:width$}", "", width = (run_level + 1) * 3);
                     let test_prefix2 = format!("{:width$}", "", width = (run_level + 2) * 3);
