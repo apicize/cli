@@ -1,5 +1,9 @@
 # Change Log
 
+# 0.13.0
+
+* Add support for reqwest trace logging
+
 # 0.12.0
 
 * Update apicize_lib to 0.13..3

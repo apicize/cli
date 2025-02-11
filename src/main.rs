@@ -1,16 +1,19 @@
 use apicize_lib::apicize::{ApicizeExecution, ApicizeExecutionItem};
-use apicize_lib::settings::ApicizeSettings;
 use apicize_lib::test_runner::cleanup_v8;
 use apicize_lib::{open_data_stream, test_runner, ApicizeError, Parameters, Warnings, Workspace};
 use clap::Parser;
 use colored::Colorize;
+use dirs::{config_dir, document_dir};
+use log::{Metadata, Record};
 use num_format::{SystemLocale, ToFormattedString};
-use serde::Serialize;
+use regex::Regex;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::ffi::OsStr;
+use std::fs::File;
 use std::io::{stderr, stdin, stdout, Write};
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
+use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 use std::{fs, process};
 
@@ -25,6 +28,9 @@ struct Args {
     /// Name of the output file name for test results (or - to write to STDOUT)
     #[arg(short, long)]
     output: Option<String>,
+    /// Name of the output file name for tracing
+    #[arg(short, long)]
+    tracing: Option<String>,
     /// Global parameter file name (overriding default location, if available)
     #[arg(short, long)]
     globals: Option<String>,
@@ -136,6 +142,104 @@ fn render_execution_item(
             }
         }
     }
+}
+
+/// Search for workbook with the given file name, looking at configured and default workbook
+/// directories if file_name is not fully qualified
+fn find_workbook(
+    file_name: PathBuf,
+    feedback: &mut Box<dyn Write>,
+) -> Result<PathBuf, std::io::Error> {
+    if file_name.is_file() {
+        return Ok(file_name);
+    }
+
+    let mut base_name = file_name;
+
+    // Ensure file_name has .apicize suffix
+    let ext = base_name
+        .extension()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if ext != ".apicize" {
+        base_name.set_extension("apicize");
+    }
+
+    if base_name.is_file() {
+        return Ok(base_name);
+    }
+
+    // See if the file is in the configured settings directory
+    let mut configured_workbook_directory = PathBuf::default();
+    if let Some(config_path) = config_dir() {
+        let settings_file_name = config_path.join("apicize").join("settings.json");
+        if Path::new(&settings_file_name).is_file() {
+            match serde_json::from_reader::<File, ApicizeSettings>(File::open(&settings_file_name)?)
+            {
+                Ok(config) => {
+                    if let Some(workbook_directory) = config.workbook_directory {
+                        configured_workbook_directory =
+                            PathBuf::from_str(workbook_directory.as_str()).unwrap();
+                        let result = configured_workbook_directory.join(&base_name);
+                        if result.is_file() {
+                            return Ok(result);
+                        } else {
+                            writeln!(
+                                feedback,
+                                "{}",
+                                format!(
+                                    "WARNING: Unable to locate workbook in {}",
+                                    result.to_string_lossy(),
+                                )
+                                .yellow()
+                            )
+                            .unwrap();
+                        }
+                    }
+                }
+                Err(err) => {
+                    writeln!(
+                        feedback,
+                        "{}",
+                        format!(
+                            "WARNING [Apicize]: Unable to read Apicize settings file: {}, {}",
+                            settings_file_name.to_string_lossy(),
+                            err
+                        )
+                        .yellow()
+                    )
+                    .unwrap();
+                }
+            }
+        }
+    }
+
+    // Fall back to the default Apicize documents directory
+    if let Some(doc_dir) = document_dir() {
+        let default_workbook_directory = doc_dir.join("apicize");
+        if default_workbook_directory != configured_workbook_directory {
+            let result = doc_dir.join("apicize").join(&base_name);
+            if result.is_file() {
+                return Ok(result);
+            }
+
+            writeln!(
+                feedback,
+                "{}",
+                format!(
+                    "WARNING: Unable to locate workbook in {}",
+                    result.to_string_lossy(),
+                )
+                .yellow()
+            )
+            .unwrap();
+        }
+    }
+
+    Err(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        "Workbook not found",
+    ))
 }
 
 fn process_execution(
@@ -260,6 +364,9 @@ fn process_execution(
     failure_count
 }
 
+static LOGGER: OnceLock<ReqwestLogger> = OnceLock::new();
+static TRACE_FILE: OnceLock<File> = OnceLock::new();
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     let args = Args::parse();
@@ -283,27 +390,16 @@ async fn main() {
     .unwrap();
     writeln!(feedback).unwrap();
 
-    let stored_settings: Option<ApicizeSettings> = match ApicizeSettings::open() {
-        Ok(serialized_settings) => Some(serialized_settings.data),
-        Err(_err) => None,
-    };
-
-    let globals_filename = args.globals.map(PathBuf::from);
+    let globals_filename = args
+        .globals
+        .map(PathBuf::from)
+        .unwrap_or(Parameters::get_globals_filename());
 
     if args.info {
-        let global_filename = if let Some(filename) = &globals_filename {
-            String::from(filename.to_string_lossy())
-        } else {
-            let default_globals_filename = Parameters::get_globals_filename();
-            String::from(default_globals_filename.to_string_lossy())
-        };
-
-        writeln!(feedback, "Global parameters: {}", &global_filename).unwrap();
-
         writeln!(
             feedback,
-            "Default workbooks directory: {}",
-            ApicizeSettings::get_workbooks_directory().to_string_lossy()
+            "Global parameters: {}",
+            globals_filename.to_string_lossy()
         )
         .unwrap();
     }
@@ -312,9 +408,21 @@ async fn main() {
     let workspace: Workspace;
 
     if args.file == "-" {
+        let global_parameters = match Parameters::open(&globals_filename, true) {
+            Ok(params) => params,
+            Err(err) => {
+                eprintln!("{}", format!("Unable to read STDIN: {}", err.error).red());
+                process::exit(-2);
+            }
+        };
+
         match open_data_stream(String::from("STDIN"), &mut stdin()) {
-            Ok(mut success) => {
-                match Workspace::open_from_workbook(&mut success.data, None, globals_filename) {
+            Ok(success) => {
+                match Workspace::build_workspace(
+                    success.data,
+                    Parameters::default(),
+                    global_parameters,
+                ) {
                     Ok(opened_workspace) => {
                         workspace = opened_workspace;
                     }
@@ -330,33 +438,13 @@ async fn main() {
             }
         }
     } else {
-        let mut file_name = PathBuf::from(&args.file);
-
-        let mut found = file_name.as_path().is_file();
-
-        // Try adding extension if not in file name
-        if !found && file_name.extension() != Some(OsStr::new("apicize")) {
-            file_name.set_extension("apicize");
-            found = file_name.as_path().is_file();
-        }
-
-        // Try settings workbook path if defined
-        if !found {
-            if let Some(dir) = stored_settings.and_then(|s| s.workbook_directory) {
-                let mut temp = PathBuf::from(dir);
-                temp.push(&file_name);
-                file_name = temp;
-                found = file_name.as_path().is_file();
+        let file_name = match find_workbook(PathBuf::from(&args.file), &mut feedback) {
+            Ok(f) => f,
+            Err(err) => {
+                eprintln!("{}", format!("Error: {}", &err).red());
+                std::process::exit(-1);
             }
-        }
-
-        if !found {
-            eprintln!(
-                "{}",
-                format!("Error: Apicize file \"{}\" not found", &args.file).red()
-            );
-            std::process::exit(-1);
-        }
+        };
 
         writeln!(
             feedback,
@@ -365,7 +453,7 @@ async fn main() {
         )
         .unwrap();
 
-        match Workspace::open_from_file(&file_name, globals_filename) {
+        match Workspace::open(&file_name) {
             Ok(opened_workspace) => {
                 workspace = opened_workspace;
             }
@@ -402,8 +490,6 @@ async fn main() {
         }
     }
 
-    // initialize_v8();
-
     let request_ids = workspace.requests.top_level_ids.to_owned();
     let mut output_file = OutputFile {
         runs: HashMap::new(),
@@ -412,6 +498,20 @@ async fn main() {
     let start = Instant::now();
     let mut failure_count = 0;
     let arc_test_started = Arc::new(start);
+
+    let enable_trace: bool;
+    if let Some(file_name) = args.tracing {
+        let _ = log::set_logger(LOGGER.get_or_init(|| {
+            ReqwestLogger::new(
+                &start.clone(),
+                TRACE_FILE.get_or_init(|| File::create(file_name).unwrap()),
+            )
+        }));
+        log::set_max_level(log::LevelFilter::Trace);
+        enable_trace = true;
+    } else {
+        enable_trace = false;
+    }
 
     let shared_workspace = Arc::new(workspace);
     for run_number in 0..args.runs {
@@ -443,11 +543,12 @@ async fn main() {
                 writeln!(feedback, "{}", format!("Calling {}", name).blue()).unwrap();
 
                 let result = test_runner::run(
+                    &vec![request_id.clone()],
                     shared_workspace.clone(),
-                    Some(vec![request_id.clone()]),
                     None,
                     arc_test_started.clone(),
                     None,
+                    enable_trace,
                 )
                 .await;
 
@@ -506,4 +607,82 @@ async fn main() {
 #[derive(Serialize)]
 struct OutputFile {
     pub runs: HashMap<usize, Vec<Result<ApicizeExecution, ApicizeError>>>,
+}
+
+/// Apicize application settings
+#[derive(Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct ApicizeSettings {
+    /// Default directory that workbooks are stored in
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workbook_directory: Option<String>,
+}
+
+pub struct ReqwestLogger {
+    regex_readwrite: Regex,
+    regex_connect: Regex,
+    start: Instant,
+    output: &'static File,
+}
+
+impl ReqwestLogger {
+    pub fn new(start: &Instant, output: &'static File) -> Self {
+        ReqwestLogger {
+            regex_readwrite: Regex::new(r#"^([0-9a-f]+) (read|write): (b".*")$"#).unwrap(),
+            regex_connect: Regex::new(r#"starting new connection: (.*)"#).unwrap(),
+            start: *start,
+            output,
+        }
+    }
+}
+
+impl log::Log for ReqwestLogger {
+    fn enabled(&self, _: &Metadata) -> bool {
+        true
+    }
+
+    fn log(&self, record: &Record) {
+        let target = record.target();
+        if target == "reqwest::connect" {
+            let args = record.args().to_string();
+            if let Some(result) = self.regex_connect.captures(&args) {
+                if let Some(host) = result.get(1) {
+                    let mut out = self.output;
+                    out.write_all(
+                        format!(
+                            "{}ms [] (CONNECT) {}\n",
+                            self.start.elapsed().as_millis(),
+                            host.as_str()
+                        )
+                        .as_bytes(),
+                    )
+                    .unwrap();
+                }
+            }
+        } else if target == "reqwest::connect::verbose" {
+            let args = record.args().to_string();
+            if let Some(result) = self.regex_readwrite.captures(&args) {
+                if let Some(request_id) = result.get(1) {
+                    if let Some(operation) = result.get(2) {
+                        if let Some(data) = result.get(3) {
+                            let mut out = self.output;
+                            out.write_all(
+                                format!(
+                                    "{}ms [{}] ({}) {}\n",
+                                    self.start.elapsed().as_millis(),
+                                    request_id.as_str(),
+                                    operation.as_str().to_uppercase(),
+                                    data.as_str(),
+                                )
+                                .as_bytes(),
+                            )
+                            .unwrap();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn flush(&self) {}
 }

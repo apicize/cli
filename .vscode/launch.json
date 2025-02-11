@@ -14,7 +14,7 @@
         "demo"
       ],
       "env": {
-        "RUST_BACKTRACE": "full"
+        "RUST_BACKTRACE": "full",
       },
       "cwd": "${workspaceFolder}",
       "stopOnEntry": false,
