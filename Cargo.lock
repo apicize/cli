@@ -99,7 +99,7 @@ dependencies = [
 
 [[package]]
 name = "apicize-run"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "apicize_lib",
  "async-trait",
@@ -117,9 +117,9 @@ dependencies = [
 
 [[package]]
 name = "apicize_lib"
-version = "0.16.0"
+version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68586e88ecac35bbd413c9f07f8d2839283444969c3a49628bd160963fb6022c"
+checksum = "dc6c17996a2103df606a3b8fbe10f1d90bba9caac9450ba02e8d4f98482ca627"
 dependencies = [
  "async-recursion",
  "async-trait",
@@ -189,7 +189,7 @@ dependencies = [
  "addr2line",
  "cfg-if",
  "libc",
- "miniz_oxide 0.8.3",
+ "miniz_oxide 0.8.4",
  "object",
  "rustc-demangle",
  "windows-targets 0.52.6",
@@ -343,9 +343,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.28"
+version = "4.5.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e77c3243bd94243c03672cb5154667347c457ca271254724f9f393aee1c05ff"
+checksum = "8acebd8ad879283633b343856142139f2da2317c96b05b4dd6181c61e2480184"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -353,9 +353,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.27"
+version = "4.5.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b26884eb4b57140e4d2d93652abfa49498b938b3c9179f9fc487b0acc3edad7"
+checksum = "f6ba32cbda51c7e1dfd49acc1457ba1a7dec5b64fe360e828acb13ca8dc9c2f9"
 dependencies = [
  "anstream",
  "anstyle",
@@ -1258,9 +1258,9 @@ dependencies = [
 
 [[package]]
 name = "miniz_oxide"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8402cab7aefae129c6977bb0ff1b8fd9a04eb5b51efc50a70bea51cda0c7924"
+checksum = "b3b1c9bd4fe1f0f8b387f6eb9eb3b4a1aa26185e5750efb9140301703f62cd1b"
 dependencies = [
  "adler2",
 ]

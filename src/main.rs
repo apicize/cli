@@ -1,6 +1,9 @@
 use apicize_lib::apicize::{ApicizeExecution, ApicizeExecutionItem};
 use apicize_lib::test_runner::cleanup_v8;
-use apicize_lib::{open_data_stream, test_runner, ApicizeError, Parameters, Warnings, Workspace};
+use apicize_lib::{
+    open_data_stream, test_runner, ApicizeError, Identifable, Parameters, Selection, Warnings,
+    WorkbookDefaultParameters, Workspace,
+};
 use clap::Parser;
 use colored::Colorize;
 use dirs::{config_dir, document_dir};
@@ -28,12 +31,24 @@ struct Args {
     /// Name of the output file name for test results (or - to write to STDOUT)
     #[arg(short, long)]
     output: Option<String>,
-    /// Name of the output file name for tracing
+    /// Name of the output file name for tracing HTTP traffic
     #[arg(short, long)]
-    tracing: Option<String>,
+    trace: Option<String>,
     /// Global parameter file name (overriding default location, if available)
     #[arg(short, long)]
     globals: Option<String>,
+    /// Default certificate (ID or name) to use for requests
+    #[arg(long)]
+    default_scenario: Option<String>,
+    /// Default authorization (ID or name) to use for requests
+    #[arg(long)]
+    default_authorization: Option<String>,
+    /// Default certificate (ID or name) to use for requests
+    #[arg(long)]
+    default_certificate: Option<String>,
+    /// Default proxy (ID or name) to use for requests
+    #[arg(long)]
+    default_proxy: Option<String>,
     /// Print configuration information
     #[arg(short, long, default_value_t = false)]
     info: bool,
@@ -367,6 +382,38 @@ fn process_execution(
 static LOGGER: OnceLock<ReqwestLogger> = OnceLock::new();
 static TRACE_FILE: OnceLock<File> = OnceLock::new();
 
+/// Return matching selection (if any)
+fn find_selection<T: Identifable>(
+    requested_selection: &Option<String>,
+    entities: &HashMap<String, T>,
+    label: &str,
+) -> Option<Selection> {
+    if let Some(selection) = requested_selection {
+        let matching: Option<&T> = entities.iter().find_map(|(id, e)| {
+            if id == selection || e.get_name() == selection {
+                Some(e)
+            } else {
+                None
+            }
+        });
+
+        if let Some(e) = matching {
+            Some(Selection {
+                id: e.get_id().to_owned(),
+                name: "".to_string(),
+            })
+        } else {
+            eprintln!(
+                "{}",
+                format!("Unable to locate {} \"{}\"", label, selection).red()
+            );
+            process::exit(-3);
+        }
+    } else {
+        None
+    }
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     let args = Args::parse();
@@ -404,8 +451,12 @@ async fn main() {
         .unwrap();
     }
 
+    if let Some(trace_file_name) = &args.trace {
+        writeln!(feedback, "Trace HTTP : {}", trace_file_name).unwrap();
+    }
+
     let locale = SystemLocale::default().unwrap();
-    let workspace: Workspace;
+    let mut workspace: Workspace;
 
     if args.file == "-" {
         let global_parameters = match Parameters::open(&globals_filename, true) {
@@ -500,7 +551,7 @@ async fn main() {
     let arc_test_started = Arc::new(start);
 
     let enable_trace: bool;
-    if let Some(file_name) = args.tracing {
+    if let Some(file_name) = args.trace {
         let _ = log::set_logger(LOGGER.get_or_init(|| {
             ReqwestLogger::new(
                 &start.clone(),
@@ -511,6 +562,42 @@ async fn main() {
         enable_trace = true;
     } else {
         enable_trace = false;
+    }
+
+    if workspace.defaults.is_none() {
+        workspace.defaults = Some(WorkbookDefaultParameters::default());
+    }
+
+    let defaults = workspace.defaults.as_mut().unwrap();
+
+    if let Some(selection) = find_selection(
+        &args.default_scenario,
+        &workspace.scenarios.entities,
+        "scenario",
+    ) {
+        defaults.selected_scenario = Some(selection);
+    }
+
+    if let Some(selection) = find_selection(
+        &args.default_authorization,
+        &workspace.authorizations.entities,
+        "authorization",
+    ) {
+        defaults.selected_authorization = Some(selection);
+    }
+
+    if let Some(selection) = find_selection(
+        &args.default_certificate,
+        &workspace.certificates.entities,
+        "certificate",
+    ) {
+        defaults.selected_certificate = Some(selection);
+    }
+
+    if let Some(selection) =
+        find_selection(&args.default_proxy, &workspace.proxies.entities, "proxy")
+    {
+        defaults.selected_certificate = Some(selection);
     }
 
     let shared_workspace = Arc::new(workspace);

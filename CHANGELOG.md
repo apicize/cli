@@ -1,5 +1,9 @@
 # Change Log
 
+# 0.13.1
+
+* Add support for default parameter CLI arguments
+
 # 0.13.0
 
 * Add support for reqwest trace logging
