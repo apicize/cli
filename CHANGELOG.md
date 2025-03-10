@@ -1,5 +1,9 @@
 # Change Log
 
+# 0.14.0
+
+* Add support for Seed data
+
 # 0.13.1
 
 * Add support for default parameter CLI arguments

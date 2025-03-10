@@ -16,6 +16,7 @@ Run `apicize-run [workbook]`, where `workbook` is the
 
 * `[workbook]: Name of the workbook you wish to run.  The workbook name may be a fully qualified path name, or just the name of a workbook located in the user's Apicize document directory.
 * `--runs`: Run all workbook tests the specified number of times.  This is a top-level loop, all requests and groups will be executed the number of run based upon their definition within the loop
+* `--seed <SEED DATA>`:  Executes workbook requests using the Seed data specified by name or path.
 * `--output <OUTPUT>`:  Sends JSON-formatted test output to the file specified in `<OUTPUT>`.  Setting this value to a single hyphen ("-") will output test output to STDOUT, and progress information to STDERR.
 * `--globals <GLOBALS>`:  Specifies location of global parameters file containing scenarios, authentications, certificates, proxies
 * `--info`: Print information about location of global parameters and default workbooks directory

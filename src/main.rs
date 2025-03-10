@@ -1,7 +1,9 @@
-use apicize_lib::apicize::{ApicizeExecution, ApicizeExecutionItem};
 use apicize_lib::test_runner::cleanup_v8;
 use apicize_lib::{
-    open_data_stream, test_runner, ApicizeError, Identifable, Parameters, Selection, Warnings,
+    open_data_stream, ApicizeError, ApicizeExecution, ApicizeExecutionType, ApicizeGroup,
+    ApicizeGroupChildren, ApicizeGroupItem, ApicizeGroupRun, ApicizeRequest, ApicizeResult,
+    ApicizeRowSummary, ApicizeRunner, ApicizeTestResult, ExternalData, ExternalDataSourceType,
+    Identifable, Parameters, Selection, Tallies, Tally, TestRunnerContext, Warnings,
     WorkbookDefaultParameters, Workspace,
 };
 use clap::Parser;
@@ -12,6 +14,8 @@ use num_format::{SystemLocale, ToFormattedString};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::env::current_exe;
+use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{stderr, stdin, stdout, Write};
 use std::path::{Path, PathBuf};
@@ -37,6 +41,9 @@ struct Args {
     /// Global parameter file name (overriding default location, if available)
     #[arg(short, long)]
     globals: Option<String>,
+    /// Name of seed entry, or relative path to seed file from input stream
+    #[arg(short, long)]
+    seed: Option<String>,
     /// Default certificate (ID or name) to use for requests
     #[arg(long)]
     default_scenario: Option<String>,
@@ -49,113 +56,51 @@ struct Args {
     /// Default proxy (ID or name) to use for requests
     #[arg(long)]
     default_proxy: Option<String>,
+    /// If set, output will not use color
+    #[arg(long, default_value_t = false)]
+    no_color: bool,
     /// Print configuration information
-    #[arg(short, long, default_value_t = false)]
+    #[arg(long, default_value_t = false)]
     info: bool,
 }
 
-fn duration_to_ms(d: u128, locale: &SystemLocale) -> String {
-    let mut ms = d;
-    let mins: u128 = ms / 60000;
-    ms -= mins * 60000;
-    let secs: u128 = ms / 1000;
-    ms -= secs * 1000;
-    format!("{:02}:{:02}{}{:03}", mins, secs, locale.decimal(), ms)
+trait NumericFormat {
+    fn to_min_sec_string(&self, locale: &SystemLocale) -> String;
+    fn to_ms_string(&self, locale: &SystemLocale) -> String;
 }
 
-fn render_execution_item(
-    item: &ApicizeExecutionItem,
-    level: usize,
-    locale: &SystemLocale,
-    feedback: &mut Box<dyn Write>,
-) {
-    let prefix = format!("{:width$}", "", width = level * 3);
-    match item {
-        ApicizeExecutionItem::Group(group) => {
-            let title = format!(
-                "{}{} ({} - {} ms)",
-                &prefix,
-                &group.name,
-                duration_to_ms(group.executed_at, locale),
-                &group.duration.to_formatted_string(locale),
-            );
-            writeln!(feedback, "{}", title.white()).unwrap();
+impl NumericFormat for u128 {
+    fn to_min_sec_string(&self, locale: &SystemLocale) -> String {
+        let mut ms = *self;
+        let mins: u128 = ms / 60000;
+        ms -= mins * 60000;
+        let secs: u128 = ms / 1000;
+        ms -= secs * 1000;
+        format!("{:02}:{:02}{}{:03}", mins, secs, locale.decimal(), ms)
+    }
 
-            let number_of_runs = group.runs.len();
-            for run in &group.runs {
-                let mut run_level = level;
-                if number_of_runs > 1 {
-                    let run_prefix = format!("{:width$}", "", width = (run_level + 1) * 3);
-                    run_level += 1;
-                    writeln!(
-                        feedback,
-                        "{}{}",
-                        run_prefix,
-                        format!("Run {} of {}", run.run_number, number_of_runs).white()
-                    )
-                    .unwrap();
-                }
-                for child in &run.items {
-                    render_execution_item(child, run_level + 1, locale, feedback);
-                }
-            }
-        }
-        ApicizeExecutionItem::Request(request) => {
-            let title = format!(
-                "{}{} ({} - {} ms)",
-                prefix,
-                &request.name,
-                duration_to_ms(request.executed_at, locale),
-                &request.duration.to_formatted_string(locale),
-            );
-            writeln!(feedback, "{}", title.white()).unwrap();
+    fn to_ms_string(&self, locale: &SystemLocale) -> String {
+        format!("{:00} ms", self.to_formatted_string(locale))
+    }
+}
 
-            let number_of_runs = request.runs.len();
-            for run in &request.runs {
-                let mut run_level = level;
-                if number_of_runs > 1 {
-                    let run_prefix = format!("{:width$}", "", width = (run_level + 1) * 3);
-                    run_level += 1;
-                    writeln!(
-                        feedback,
-                        "{}{}",
-                        run_prefix,
-                        format!("Run {} of {}", run.run_number, number_of_runs).white()
-                    )
-                    .unwrap();
-                }
+trait FormatHelper {
+    fn prefix(level: usize) -> Self;
+    fn title(title: &str) -> Self;
+}
 
-                if let Some(error) = &run.error {
-                    let test_prefix1 = format!("{:width$}", "", width = (run_level + 1) * 3);
-                    writeln!(feedback, "{}{}", test_prefix1, &error.to_string().red()).unwrap();
-                } else if let Some(test_results) = &run.tests {
-                    let test_prefix1 = format!("{:width$}", "", width = (run_level + 1) * 3);
-                    let test_prefix2 = format!("{:width$}", "", width = (run_level + 2) * 3);
-                    for result in test_results {
-                        print!(
-                            "{}{}",
-                            test_prefix1.blue(),
-                            &result.test_name.join(" ").blue()
-                        );
-                        if let Some(err) = &result.error {
-                            writeln!(feedback, " {}", "[ERROR]".red()).unwrap();
-                            writeln!(feedback, "{}{}", test_prefix2, err.red()).unwrap();
-                        } else if result.success {
-                            writeln!(feedback, " {}", "[PASS]".green()).unwrap();
-                        } else {
-                            writeln!(feedback, " {}", "[FAIL]".yellow()).unwrap();
-                        }
+impl FormatHelper for String {
+    fn prefix(level: usize) -> String {
+        format!("{:width$}", "", width = level * 3)
+    }
 
-                        if let Some(logs) = &result.logs {
-                            for log in logs {
-                                writeln!(feedback, "{}{}", test_prefix2, log.white().dimmed())
-                                    .unwrap();
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    fn title(title: &str) -> String {
+        let t = if title.is_empty() {
+            String::new()
+        } else {
+            format!(" {} ", title)
+        };
+        format!("{:-^1$}", t, 32)
     }
 }
 
@@ -257,126 +202,306 @@ fn find_workbook(
     ))
 }
 
-fn process_execution(
-    execution_result: &Result<ApicizeExecution, ApicizeError>,
+fn render_group(
+    group: &ApicizeGroup,
     level: usize,
     locale: &SystemLocale,
     feedback: &mut Box<dyn Write>,
-) -> usize {
-    let mut failure_count;
-    match execution_result {
-        Ok(execution) => {
-            failure_count = 0;
-            execution
-                .items
-                .iter()
-                .for_each(|i| render_execution_item(i, 0, locale, feedback));
+) {
+    writeln!(
+        feedback,
+        "{}",
+        format!(
+            "{}{} ({} - {})",
+            String::prefix(level),
+            &group.name,
+            group.executed_at.to_min_sec_string(locale),
+            group.duration.to_ms_string(locale)
+        )
+        .white()
+    )
+    .unwrap();
 
-            writeln!(feedback).unwrap();
-            writeln!(feedback).unwrap();
-            writeln!(
-                feedback,
-                "{}",
-                "--------------- Totals ---------------".white()
-            )
-            .unwrap();
-            writeln!(
-                feedback,
-                "{}{}",
-                "Passed Tests: ".white(),
-                if execution.passed_test_count > 0 {
-                    execution
-                        .passed_test_count
-                        .to_formatted_string(locale)
-                        .green()
-                } else {
-                    "0".white()
+    if let Some(children) = &group.children {
+        match children {
+            ApicizeGroupChildren::Items(children) => {
+                for item in &children.items {
+                    render_item(item, level + 1, locale, feedback);
                 }
-            )
-            .unwrap();
-
-            writeln!(
-                feedback,
-                "{}{}",
-                "Failed Tests: ".white(),
-                if execution.failed_test_count > 0 {
-                    execution
-                        .failed_test_count
-                        .to_formatted_string(locale)
-                        .yellow()
-                } else {
-                    "0".white()
-                }
-            )
-            .unwrap();
-
-            writeln!(
-                feedback,
-                "{}{}",
-                "Requests with passed tests: ".white(),
-                if execution.requests_with_passed_tests_count > 0 {
-                    execution
-                        .requests_with_passed_tests_count
-                        .to_formatted_string(locale)
-                        .green()
-                } else {
-                    "0".white()
-                }
-            )
-            .unwrap();
-
-            writeln!(
-                feedback,
-                "{}{}",
-                "Requests with failed tests: ".white(),
-                if execution.requests_with_failed_tests_count > 0 {
-                    failure_count += execution.requests_with_failed_tests_count;
-                    execution
-                        .requests_with_failed_tests_count
-                        .to_formatted_string(locale)
-                        .yellow()
-                } else {
-                    "0".white()
-                }
-            )
-            .unwrap();
-
-            writeln!(
-                feedback,
-                "{}{}",
-                "Requests with errors: ".white(),
-                if execution.requests_with_errors > 0 {
-                    failure_count += execution.requests_with_errors;
-                    execution
-                        .requests_with_errors
-                        .to_formatted_string(locale)
-                        .red()
-                } else {
-                    "0".white()
-                }
-            )
-            .unwrap();
-            writeln!(
-                feedback,
-                "{}",
-                "--------------------------------------".white()
-            )
-            .unwrap();
-        }
-        Err(err) => {
-            let padding = format!("{:width$}", "", width = level * 3);
-            writeln!(
-                feedback,
-                "{}{}",
-                padding,
-                format!("{}: {}", err.get_label(), err).red()
-            )
-            .unwrap();
-            failure_count = 1;
+            }
+            ApicizeGroupChildren::Runs(runs) => {
+                render_group_runs(&runs.items, level + 1, locale, feedback)
+            }
         }
     }
 
-    failure_count
+    // render_tallies(
+    //     &group.get_tallies(),
+    //     format!("{} Totals", &group.name).as_str(),
+    //     level,
+    //     locale,
+    //     feedback,
+    // );
+}
+
+fn render_row_summary(
+    summary: &ApicizeRowSummary,
+    level: usize,
+    locale: &SystemLocale,
+    feedback: &mut Box<dyn Write>,
+) {
+    let row_count = summary.rows.len();
+    let prefix = String::prefix(level);
+
+    for row in &summary.rows {
+        writeln!(
+            feedback,
+            "{}",
+            format!("{}Row {} of {}", prefix, row.row_number, row_count).white()
+        )
+        .unwrap();
+
+        for item in &row.items {
+            render_item(item, level + 1, locale, feedback);
+        }
+
+        writeln!(feedback).unwrap();
+        render_tallies(
+            &row.get_tallies(),
+            &format!("Row {} Totals", row.row_number),
+            level,
+            locale,
+            feedback,
+        );
+        writeln!(feedback).unwrap();
+    }
+
+    // render_tallies(
+    //     &summary.get_tallies(),
+    //     "All Row Totals",
+    //     level,
+    //     locale,
+    //     feedback,
+    // );
+}
+
+fn render_item(
+    item: &ApicizeGroupItem,
+    level: usize,
+    locale: &SystemLocale,
+    feedback: &mut Box<dyn Write>,
+) {
+    match item {
+        ApicizeGroupItem::Group(group) => render_group(group, level, locale, feedback),
+        ApicizeGroupItem::Request(request) => render_request(request, level, locale, feedback),
+    }
+}
+
+fn render_group_runs(
+    group_runs: &Vec<ApicizeGroupRun>,
+    level: usize,
+    locale: &SystemLocale,
+    feedback: &mut Box<dyn Write>,
+) {
+    let prefix = String::prefix(level);
+    let count = group_runs.len();
+
+    for run in group_runs {
+        writeln!(
+            feedback,
+            "{}",
+            format!("{} Run {} of {}", &prefix, run.run_number, &count).white()
+        )
+        .unwrap();
+
+        for child in &run.children {
+            render_item(child, level + 1, locale, feedback);
+        }
+
+        // render_tallies(
+        //     &group_runs.get_tallies(),
+        //     format!("Run #{} Totals", run.run_number).as_str(),
+        //     level,
+        //     locale,
+        //     feedback,
+        // );
+    }
+}
+
+fn render_request(
+    request: &ApicizeRequest,
+    level: usize,
+    locale: &SystemLocale,
+    feedback: &mut Box<dyn Write>,
+) {
+    writeln!(
+        feedback,
+        "{}",
+        format!("{}{}", String::prefix(level), &request.name).white()
+    )
+    .unwrap();
+
+    match &request.execution {
+        ApicizeExecutionType::None => {}
+        ApicizeExecutionType::Single(execution) => {
+            render_execution(execution, level, locale, feedback);
+        }
+        ApicizeExecutionType::Runs(executions) => {
+            let count = executions.items.len();
+            let mut run_number = 0;
+            for execution in &executions.items {
+                run_number += 1;
+                writeln!(
+                    feedback,
+                    "{}",
+                    format!("{}Run {} of {}", String::prefix(level), &run_number, &count).white()
+                )
+                .unwrap();
+                render_execution(execution, level + 1, locale, feedback);
+            }
+        }
+    }
+}
+
+fn render_execution(
+    execution: &ApicizeExecution,
+    level: usize,
+    locale: &SystemLocale,
+    feedback: &mut Box<dyn Write>,
+) {
+    match &execution.error {
+        Some(err) => {
+            writeln!(
+                feedback,
+                "{}{}",
+                &String::prefix(level + 1),
+                err.to_string().red()
+            )
+            .unwrap();
+        }
+        None => {
+            if let Some(tests) = &execution.tests {
+                render_test_results(tests, level + 1, locale, feedback);
+            }
+        }
+    }
+}
+
+fn render_test_results(
+    tests: &Vec<ApicizeTestResult>,
+    level: usize,
+    _locale: &SystemLocale,
+    feedback: &mut Box<dyn Write>,
+) {
+    let prefix = String::prefix(level);
+    for test in tests {
+        writeln!(
+            feedback,
+            "{}{} {}",
+            &prefix,
+            test.test_name.join(" ").bright_blue(),
+            if test.success {
+                "[PASS]".green()
+            } else {
+                "[FAIL]".red()
+            }
+        )
+        .unwrap();
+
+        if let Some(logs) = &test.logs {
+            let prefix1 = format!("{:width$}", "", width = (level + 1) * 3);
+            for log in logs {
+                writeln!(feedback, "{}{}", prefix1, log.white().dimmed()).unwrap();
+            }
+        }
+    }
+}
+
+fn render_tallies(
+    tallies: &Tallies,
+    title: &str,
+    level: usize,
+    locale: &SystemLocale,
+    feedback: &mut Box<dyn Write>,
+) {
+    let prefix = String::prefix(level);
+    writeln!(feedback, "{}{}", &prefix, String::title(title).white()).unwrap();
+
+    writeln!(
+        feedback,
+        "{}{}{}",
+        &prefix,
+        "Successful Requests: ".white(),
+        if tallies.request_success_count > 0 {
+            tallies
+                .request_success_count
+                .to_formatted_string(locale)
+                .green()
+        } else {
+            "0".white()
+        }
+    )
+    .unwrap();
+
+    writeln!(
+        feedback,
+        "{}{}{}",
+        &prefix,
+        "Failed Requests: ".white(),
+        if tallies.request_failure_count > 0 {
+            tallies
+                .request_failure_count
+                .to_formatted_string(locale)
+                .yellow()
+        } else {
+            "0".white()
+        }
+    )
+    .unwrap();
+
+    writeln!(
+        feedback,
+        "{}{}{}",
+        &prefix,
+        "Errors: ".white(),
+        if tallies.request_error_count > 0 {
+            tallies
+                .request_error_count
+                .to_formatted_string(locale)
+                .red()
+        } else {
+            "0".white()
+        }
+    )
+    .unwrap();
+
+    writeln!(
+        feedback,
+        "{}{}{}",
+        &prefix,
+        "Passed Tests: ".white(),
+        if tallies.test_pass_count > 0 {
+            tallies.test_pass_count.to_formatted_string(locale).green()
+        } else {
+            "0".white()
+        }
+    )
+    .unwrap();
+
+    writeln!(
+        feedback,
+        "{}{}{}",
+        &prefix,
+        "Failed Tests: ".white(),
+        if tallies.test_fail_count > 0 {
+            tallies.test_fail_count.to_formatted_string(locale).yellow()
+        } else {
+            "0".white()
+        }
+    )
+    .unwrap();
+
+    writeln!(feedback, "{}{}", &prefix, String::title("").white()).unwrap();
 }
 
 static LOGGER: OnceLock<ReqwestLogger> = OnceLock::new();
@@ -418,6 +543,10 @@ fn find_selection<T: Identifable>(
 async fn main() {
     let args = Args::parse();
 
+    if args.no_color {
+        colored::control::set_override(false);
+    }
+
     let mut send_output_to = args.output.unwrap_or(String::from(""));
     if send_output_to.to_lowercase() == "stdout" {
         send_output_to = String::from("-");
@@ -429,12 +558,7 @@ async fn main() {
     };
 
     writeln!(feedback).unwrap();
-    writeln!(
-        feedback,
-        "{}",
-        "------------ Initializtion -----------".white()
-    )
-    .unwrap();
+    writeln!(feedback, "{}", String::title("Initialization").white()).unwrap();
     writeln!(feedback).unwrap();
 
     let globals_filename = args
@@ -457,8 +581,10 @@ async fn main() {
 
     let locale = SystemLocale::default().unwrap();
     let mut workspace: Workspace;
+    let allowed_data_path;
 
     if args.file == "-" {
+        allowed_data_path = current_exe().unwrap();
         let global_parameters = match Parameters::open(&globals_filename, true) {
             Ok(params) => params,
             Err(err) => {
@@ -504,6 +630,12 @@ async fn main() {
         )
         .unwrap();
 
+        allowed_data_path = std::path::absolute(&file_name)
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+
         match Workspace::open(&file_name) {
             Ok(opened_workspace) => {
                 workspace = opened_workspace;
@@ -548,7 +680,6 @@ async fn main() {
 
     let start = Instant::now();
     let mut failure_count = 0;
-    let arc_test_started = Arc::new(start);
 
     let enable_trace: bool;
     if let Some(file_name) = args.trace {
@@ -600,66 +731,130 @@ async fn main() {
         defaults.selected_certificate = Some(selection);
     }
 
-    let shared_workspace = Arc::new(workspace);
+    // If seed is specified, then match by ID or name
+    if args.seed.is_some() {
+        if let Ok(Some(id)) = workspace.data.find_by_id_or_name(&args.seed) {
+            writeln!(
+                feedback,
+                "{}",
+                format!("Using seed entry \"{}\"", args.seed.unwrap()).white()
+            )
+            .unwrap();
+
+            defaults.selected_data = Some(Selection {
+                id,
+                name: "Command line seed".to_string(),
+            });
+        } else {
+            let seed = args.seed.unwrap();
+            let full_seed_name = allowed_data_path.join(&seed);
+            if full_seed_name.is_file() {
+                writeln!(
+                    feedback,
+                    "{}",
+                    format!("Using seed entry \"{}\"", &seed).white()
+                )
+                .unwrap();
+
+                let ext = full_seed_name
+                    .extension()
+                    .unwrap_or(OsStr::new(""))
+                    .to_string_lossy()
+                    .to_ascii_lowercase();
+                let source_type = match ext.as_str() {
+                    "json" => ExternalDataSourceType::FileJSON,
+                    "csv" => ExternalDataSourceType::FileCSV,
+                    _ => {
+                        eprintln!(
+                            "Error: seed file \"{}\" does not end with .csv or .json",
+                            seed
+                        );
+                        std::process::exit(-1);
+                    }
+                };
+
+                workspace.data.entities.insert(
+                    "\0".to_string(),
+                    ExternalData {
+                        id: "\0".to_string(),
+                        name: String::default(),
+                        source_type,
+                        source: seed,
+                    },
+                );
+            } else {
+                eprintln!("Error: seed \"{}\" not found", seed);
+                std::process::exit(-1);
+            }
+        }
+    }
+
+    // let shared_workspace = Arc::new(workspace);
+    let runner = Arc::new(TestRunnerContext::new(
+        workspace,
+        None,
+        None,
+        &Some(allowed_data_path),
+        enable_trace,
+    ));
+
+    let mut level = 0;
+
+    if args.runs == 1 {
+        writeln!(feedback).unwrap();
+        writeln!(feedback, "{}", String::title("Executing Requests").white()).unwrap();
+        writeln!(feedback).unwrap();
+    }
+
+    let mut grand_total_tallies = Tallies::default();
+
     for run_number in 0..args.runs {
-        let mut executions: HashMap<String, Result<ApicizeExecution, ApicizeError>> =
-            HashMap::new();
+        let run_result = runner.run(&request_ids).await;
+
         if args.runs > 1 {
             writeln!(feedback).unwrap();
             writeln!(
                 feedback,
                 "{}",
-                format!(
-                    "------- Execution Run {} of {} ---------",
-                    run_number + 1,
-                    args.runs
-                )
-                .white()
+                String::title(format!("Run #{}", &run_number).as_str()).white()
             )
             .unwrap();
             writeln!(feedback).unwrap();
+            level += 1;
         }
 
-        for request_id in &request_ids {
-            if let Some(request) = &shared_workspace.requests.entities.get(request_id) {
-                let mut name = request.get_name().clone();
-                if name.is_empty() {
-                    name = format!("{} (Unnamed)", request.get_id());
+        match &run_result {
+            Ok(result) => {
+                grand_total_tallies.add(&result.get_tallies());
+
+                match result {
+                    ApicizeResult::Items(items) => {
+                        for item in &items.items {
+                            render_item(item, level + 1, &locale, &mut feedback);
+                        }
+                    }
+                    ApicizeResult::Rows(row_summary) => {
+                        render_row_summary(row_summary, level + 1, &locale, &mut feedback);
+                    }
                 }
-
-                writeln!(feedback, "{}", format!("Calling {}", name).blue()).unwrap();
-
-                let result = test_runner::run(
-                    &vec![request_id.clone()],
-                    shared_workspace.clone(),
-                    None,
-                    arc_test_started.clone(),
-                    None,
-                    enable_trace,
-                )
-                .await;
-
-                executions.insert(name, result);
+            }
+            Err(err) => {
+                eprintln!("Error: {}", err);
+                failure_count += 1;
             }
         }
 
-        writeln!(feedback).unwrap();
-        writeln!(
-            feedback,
-            "{}",
-            "--------------- Results --------------".white()
-        )
-        .unwrap();
-
-        let execution_values: Vec<Result<ApicizeExecution, ApicizeError>> =
-            executions.into_values().collect();
-        for execution in &execution_values {
-            writeln!(feedback).unwrap();
-            failure_count += process_execution(execution, 0, &locale, &mut feedback);
-        }
-
-        output_file.runs.insert(run_number, execution_values);
+        output_file.runs.insert(run_number, run_result);
     }
+
+    writeln!(feedback).unwrap();
+    render_tallies(
+        &grand_total_tallies,
+        "Grand Total",
+        0,
+        &locale,
+        &mut feedback,
+    );
 
     if !send_output_to.is_empty() {
         let serialized = serde_json::to_string(&output_file).unwrap();
@@ -688,12 +883,12 @@ async fn main() {
     }
 
     cleanup_v8();
-    process::exit(failure_count as i32);
+    process::exit(failure_count);
 }
 
 #[derive(Serialize)]
 struct OutputFile {
-    pub runs: HashMap<usize, Vec<Result<ApicizeExecution, ApicizeError>>>,
+    pub runs: HashMap<usize, Result<ApicizeResult, ApicizeError>>,
 }
 
 /// Apicize application settings
