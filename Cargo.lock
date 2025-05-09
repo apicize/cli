@@ -99,7 +99,7 @@ dependencies = [
 
 [[package]]
 name = "apicize-run"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "apicize_lib",
  "async-trait",
@@ -117,9 +117,7 @@ dependencies = [
 
 [[package]]
 name = "apicize_lib"
-version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60b78899f9c765257aa64f62fdb4ca3967c7c9db5f7e371638e21ade9ea7965d"
+version = "0.18.0"
 dependencies = [
  "async-recursion",
  "async-trait",
@@ -1692,7 +1690,6 @@ dependencies = [
  "base64",
  "bytes",
  "encoding_rs",
- "futures-channel",
  "futures-core",
  "futures-util",
  "h2",

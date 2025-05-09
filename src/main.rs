@@ -3,8 +3,7 @@ use apicize_lib::{
     open_data_stream, ApicizeError, ApicizeExecution, ApicizeExecutionType, ApicizeGroup,
     ApicizeGroupChildren, ApicizeGroupItem, ApicizeGroupRun, ApicizeRequest, ApicizeResult,
     ApicizeRowSummary, ApicizeRunner, ApicizeTestResult, ExternalData, ExternalDataSourceType,
-    Identifable, Parameters, Selection, Tallies, Tally, TestRunnerContext, Warnings,
-    WorkbookDefaultParameters, Workspace,
+    Identifiable, Parameters, Selection, Tallies, Tally, TestRunnerContext, Warnings, Workspace,
 };
 use clap::Parser;
 use colored::Colorize;
@@ -508,7 +507,7 @@ static LOGGER: OnceLock<ReqwestLogger> = OnceLock::new();
 static TRACE_FILE: OnceLock<File> = OnceLock::new();
 
 /// Return matching selection (if any)
-fn find_selection<T: Identifable>(
+fn find_selection<T: Identifiable>(
     requested_selection: &Option<String>,
     entities: &HashMap<String, T>,
     label: &str,
@@ -695,18 +694,12 @@ async fn main() {
         enable_trace = false;
     }
 
-    if workspace.defaults.is_none() {
-        workspace.defaults = Some(WorkbookDefaultParameters::default());
-    }
-
-    let defaults = workspace.defaults.as_mut().unwrap();
-
     if let Some(selection) = find_selection(
         &args.default_scenario,
         &workspace.scenarios.entities,
         "scenario",
     ) {
-        defaults.selected_scenario = Some(selection);
+        workspace.defaults.selected_scenario = Some(selection);
     }
 
     if let Some(selection) = find_selection(
@@ -714,7 +707,7 @@ async fn main() {
         &workspace.authorizations.entities,
         "authorization",
     ) {
-        defaults.selected_authorization = Some(selection);
+        workspace.defaults.selected_authorization = Some(selection);
     }
 
     if let Some(selection) = find_selection(
@@ -722,31 +715,31 @@ async fn main() {
         &workspace.certificates.entities,
         "certificate",
     ) {
-        defaults.selected_certificate = Some(selection);
+        workspace.defaults.selected_certificate = Some(selection);
     }
 
     if let Some(selection) =
         find_selection(&args.default_proxy, &workspace.proxies.entities, "proxy")
     {
-        defaults.selected_certificate = Some(selection);
+        workspace.defaults.selected_certificate = Some(selection);
     }
 
     // If seed is specified, then match by ID or name
-    if args.seed.is_some() {
-        if let Ok(Some(id)) = workspace.data.find_by_id_or_name(&args.seed) {
-            writeln!(
-                feedback,
-                "{}",
-                format!("Using seed entry \"{}\"", args.seed.unwrap()).white()
-            )
-            .unwrap();
+    if let Some(seed) = args.seed {
+        if let Some(id) = workspace.data.iter().find_map(|d| {
+            if d.id == seed || d.name == seed {
+                Some(d.id.clone())
+            } else {
+                None
+            }
+        }) {
+            writeln!(feedback, "Using seed entry \"{}\"", seed.white()).unwrap();
 
-            defaults.selected_data = Some(Selection {
+            workspace.defaults.selected_data = Some(Selection {
                 id,
                 name: "Command line seed".to_string(),
             });
         } else {
-            let seed = args.seed.unwrap();
             let full_seed_name = allowed_data_path.join(&seed);
             if full_seed_name.is_file() {
                 writeln!(
@@ -773,8 +766,8 @@ async fn main() {
                     }
                 };
 
-                workspace.data.entities.insert(
-                    "\0".to_string(),
+                workspace.data.insert(
+                    0,
                     ExternalData {
                         id: "\0".to_string(),
                         name: String::default(),

@@ -1,5 +1,9 @@
 # Change Log
 
+# 0.15.0
+
+* Updated to use recent Apicize rust library
+
 # 0.14.0
 
 * Add support for Seed data
