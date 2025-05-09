@@ -759,8 +759,12 @@ async fn main() {
                     "csv" => ExternalDataSourceType::FileCSV,
                     _ => {
                         eprintln!(
-                            "Error: seed file \"{}\" does not end with .csv or .json",
-                            seed
+                            "{}",
+                            format!(
+                                "Error: seed file \"{}\" does not end with .csv or .json",
+                                seed
+                            )
+                            .red()
                         );
                         std::process::exit(-1);
                     }
@@ -775,8 +779,14 @@ async fn main() {
                         source: seed,
                     },
                 );
+
+                workspace.defaults.selected_data = Some(Selection {
+                    id: "\0".to_string(),
+                    name: "Command line seed".to_string(),
+                });
             } else {
-                eprintln!("Error: seed \"{}\" not found", seed);
+                eprintln!("{}", format!("Error: seed \"{}\" not found", seed).red());
+
                 std::process::exit(-1);
             }
         }
@@ -832,7 +842,7 @@ async fn main() {
                 }
             }
             Err(err) => {
-                eprintln!("Error: {}", err);
+                eprintln!("{}", format!("Error: {}", err).red());
                 failure_count += 1;
             }
         }

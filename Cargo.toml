@@ -1,6 +1,6 @@
 [package]
 name = "apicize-run"
-version = "0.15.0"
+version = "0.15.1"
 description = "Apicize CLI test runner"
 authors = ["Apicize"]
 license = "MIT"

@@ -1,5 +1,9 @@
 # Change Log
 
+# 0.15.1
+
+* Fixed --seed parameter to properly use relative file name
+
 # 0.15.0
 
 * Updated to use recent Apicize rust library
