@@ -99,7 +99,7 @@ dependencies = [
 
 [[package]]
 name = "apicize-run"
-version = "0.15.2"
+version = "0.15.3"
 dependencies = [
  "apicize_lib",
  "async-trait",
@@ -117,9 +117,9 @@ dependencies = [
 
 [[package]]
 name = "apicize_lib"
-version = "0.18.1"
+version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea4f12958190e46b7e420782aaa073081f55270f9a38c6a848a4820ae7c341e6"
+checksum = "6466f48e0bdd30e519fe624ad709260d1cd7ba3a938239d68115d33d56fbecd8"
 dependencies = [
  "async-recursion",
  "async-trait",
@@ -140,6 +140,7 @@ dependencies = [
  "tokio-util",
  "uuid",
  "v8",
+ "xmltojson",
 ]
 
 [[package]]
@@ -1529,6 +1530,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "quick-xml"
+version = "0.37.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "331e97a1af0bf59823e6eadffe373d7b27f485be8748f71471c662c1f269b7fb"
+dependencies = [
+ "memchr",
+ "serde",
+]
+
+[[package]]
 name = "quinn"
 version = "0.11.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2115,9 +2126,9 @@ dependencies = [
 
 [[package]]
 name = "tempfile"
-version = "3.19.1"
+version = "3.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7437ac7763b9b123ccf33c338a5cc1bac6f69b45a136c19bdd8a65e3916435bf"
+checksum = "e8a64e3985349f2441a1a9ef0b853f869006c3855f2cda6862a94d26ebb9d6a1"
 dependencies = [
  "fastrand",
  "getrandom 0.3.3",
@@ -2928,6 +2939,18 @@ name = "writeable"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ea2f10b9bb0928dfb1b42b65e1f9e36f7f54dbdf08457afefb38afcdec4fa2bb"
+
+[[package]]
+name = "xmltojson"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75f5ca7e80da468d8e89e45873b01653121bf2540de514c42d8ecb7ac91a3478"
+dependencies = [
+ "log",
+ "quick-xml",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "yoke"
