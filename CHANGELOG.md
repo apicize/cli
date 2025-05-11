@@ -1,5 +1,9 @@
 # Change Log
 
+# 0.15.2
+
+* Include updated lib to prioritize scenario and data variables over previous run results
+
 # 0.15.1
 
 * Fixed --seed parameter to properly use relative file name
