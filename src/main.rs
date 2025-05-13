@@ -2,8 +2,9 @@ use apicize_lib::test_runner::cleanup_v8;
 use apicize_lib::{
     open_data_stream, ApicizeError, ApicizeExecution, ApicizeExecutionType, ApicizeGroup,
     ApicizeGroupChildren, ApicizeGroupItem, ApicizeGroupRun, ApicizeRequest, ApicizeResult,
-    ApicizeRowSummary, ApicizeRunner, ApicizeTestResult, ExternalData, ExternalDataSourceType,
-    Identifiable, Parameters, Selection, Tallies, Tally, TestRunnerContext, Warnings, Workspace,
+    ApicizeRowSummary, ApicizeRunner, ApicizeTestBehavior, ApicizeTestResult, ExternalData,
+    ExternalDataSourceType, Identifiable, Parameters, Selection, Tallies, Tally, TestRunnerContext,
+    Warnings, Workspace,
 };
 use clap::Parser;
 use colored::Colorize;
@@ -386,31 +387,82 @@ fn render_execution(
     }
 }
 
+fn render_behavior(
+    behavior: &ApicizeTestBehavior,
+    level: usize,
+    feedback: &mut Box<dyn Write>,
+    name_prefix: Option<&str>,
+) {
+    let prefix = String::prefix(level);
+    let full_name = match name_prefix {
+        Some(scenario_name) => format!("{} {}", scenario_name, behavior.name),
+        None => behavior.name.to_string(),
+    };
+
+    writeln!(
+        feedback,
+        "{}{} {}",
+        &prefix,
+        full_name.bright_blue(),
+        if behavior.error.is_some() {
+            "[ERROR]".red()
+        } else if behavior.success {
+            "[PASS]".green()
+        } else {
+            "[FAIL]".red()
+        }
+    )
+    .unwrap();
+
+    if let Some(error) = &behavior.error {
+        let prefix1 = format!("{:width$}", "", width = (level + 1) * 3);
+        writeln!(feedback, "{}{}", prefix1, error.red()).unwrap();
+    }
+
+    if let Some(logs) = &behavior.logs {
+        let prefix1 = format!("{:width$}", "", width = (level + 1) * 3);
+        for log in logs {
+            writeln!(feedback, "{}{}", prefix1, log.white().dimmed()).unwrap();
+        }
+    }
+}
+
 fn render_test_results(
-    tests: &Vec<ApicizeTestResult>,
+    results: &Vec<ApicizeTestResult>,
     level: usize,
     _locale: &SystemLocale,
     feedback: &mut Box<dyn Write>,
 ) {
     let prefix = String::prefix(level);
-    for test in tests {
-        writeln!(
-            feedback,
-            "{}{} {}",
-            &prefix,
-            test.test_name.join(" ").bright_blue(),
-            if test.success {
-                "[PASS]".green()
-            } else {
-                "[FAIL]".red()
-            }
-        )
-        .unwrap();
+    for result in results {
+        match result {
+            ApicizeTestResult::Scenario(scenario) => {
+                if let Some(children) = &scenario.children {
+                    if children.len() == 1 {
+                        if let ApicizeTestResult::Behavior(behavior) = children.first().unwrap() {
+                            render_behavior(behavior, level, feedback, Some(&scenario.name));
+                            continue;
+                        }
+                    }
 
-        if let Some(logs) = &test.logs {
-            let prefix1 = format!("{:width$}", "", width = (level + 1) * 3);
-            for log in logs {
-                writeln!(feedback, "{}{}", prefix1, log.white().dimmed()).unwrap();
+                    writeln!(
+                        feedback,
+                        "{}{} {}",
+                        &prefix,
+                        scenario.name.bright_blue(),
+                        if scenario.success {
+                            "[PASS]".green()
+                        } else {
+                            "[FAIL]".red()
+                        }
+                    )
+                    .unwrap();
+
+                    render_test_results(children, level + 1, _locale, feedback);
+                }
+            }
+            ApicizeTestResult::Behavior(behavior) => {
+                render_behavior(behavior, level, feedback, None);
             }
         }
     }

@@ -1,5 +1,9 @@
 # Change Log
 
+# 0.16.0
+
+* Return test results as a hierarchy of scenarios/behaviors
+
 # 0.15.3
 
 * Include updated lib to standardize request/response body info so that `text` is the data that is sent and `data` is a parsed value and improve XML support
