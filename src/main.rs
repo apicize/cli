@@ -1,10 +1,11 @@
 use apicize_lib::test_runner::cleanup_v8;
 use apicize_lib::{
-    open_data_stream, ApicizeError, ApicizeExecution, ApicizeExecutionType, ApicizeGroup,
-    ApicizeGroupChildren, ApicizeGroupItem, ApicizeGroupRun, ApicizeRequest, ApicizeResult,
-    ApicizeRowSummary, ApicizeRunner, ApicizeTestBehavior, ApicizeTestResult, ExternalData,
-    ExternalDataSourceType, Identifiable, Parameters, Selection, Tallies, Tally, TestRunnerContext,
-    Warnings, Workspace,
+    open_data_stream, ApicizeError, ApicizeExecution, ApicizeGroupResult,
+    ApicizeGroupResultContent, ApicizeGroupResultRow, ApicizeGroupResultRowContent,
+    ApicizeGroupResultRun, ApicizeRequestResult, ApicizeRequestResultContent,
+    ApicizeRequestResultRow, ApicizeRequestResultRun, ApicizeResult, ApicizeRunner,
+    ApicizeTestBehavior, ApicizeTestResult, ExternalData, ExternalDataSourceType, Identifiable,
+    Parameters, Selection, Tallies, Tally, TestRunnerContext, Warnings, Workspace,
 };
 use clap::Parser;
 use colored::Colorize;
@@ -202,8 +203,31 @@ fn find_workbook(
     ))
 }
 
+fn render_results(
+    results: &Vec<ApicizeResult>,
+    level: usize,
+    locale: &SystemLocale,
+    feedback: &mut Box<dyn Write>,
+) {
+    for result in results {
+        render_result(result, level, locale, feedback);
+    }
+}
+
+fn render_result(
+    result: &ApicizeResult,
+    level: usize,
+    locale: &SystemLocale,
+    feedback: &mut Box<dyn Write>,
+) {
+    match result {
+        ApicizeResult::Request(request) => render_request(request, level, locale, feedback),
+        ApicizeResult::Group(group) => render_group(group, level, locale, feedback),
+    }
+}
+
 fn render_group(
-    group: &ApicizeGroup,
+    group: &ApicizeGroupResult,
     level: usize,
     locale: &SystemLocale,
     feedback: &mut Box<dyn Write>,
@@ -222,114 +246,21 @@ fn render_group(
     )
     .unwrap();
 
-    if let Some(children) = &group.children {
-        match children {
-            ApicizeGroupChildren::Items(children) => {
-                for item in &children.items {
-                    render_item(item, level + 1, locale, feedback);
-                }
-            }
-            ApicizeGroupChildren::Runs(runs) => {
-                render_group_runs(&runs.items, level + 1, locale, feedback)
-            }
+    match &group.content {
+        ApicizeGroupResultContent::Rows { rows } => {
+            render_group_rows(rows, level, locale, feedback)
         }
-    }
-
-    // render_tallies(
-    //     &group.get_tallies(),
-    //     format!("{} Totals", &group.name).as_str(),
-    //     level,
-    //     locale,
-    //     feedback,
-    // );
-}
-
-fn render_row_summary(
-    summary: &ApicizeRowSummary,
-    level: usize,
-    locale: &SystemLocale,
-    feedback: &mut Box<dyn Write>,
-) {
-    let row_count = summary.rows.len();
-    let prefix = String::prefix(level);
-
-    for row in &summary.rows {
-        writeln!(
-            feedback,
-            "{}",
-            format!("{}Row {} of {}", prefix, row.row_number, row_count).white()
-        )
-        .unwrap();
-
-        for item in &row.items {
-            render_item(item, level + 1, locale, feedback);
+        ApicizeGroupResultContent::Runs { runs } => {
+            render_group_runs(runs, level, locale, feedback)
         }
-
-        writeln!(feedback).unwrap();
-        render_tallies(
-            &row.get_tallies(),
-            &format!("Row {} Totals", row.row_number),
-            level,
-            locale,
-            feedback,
-        );
-        writeln!(feedback).unwrap();
-    }
-
-    // render_tallies(
-    //     &summary.get_tallies(),
-    //     "All Row Totals",
-    //     level,
-    //     locale,
-    //     feedback,
-    // );
-}
-
-fn render_item(
-    item: &ApicizeGroupItem,
-    level: usize,
-    locale: &SystemLocale,
-    feedback: &mut Box<dyn Write>,
-) {
-    match item {
-        ApicizeGroupItem::Group(group) => render_group(group, level, locale, feedback),
-        ApicizeGroupItem::Request(request) => render_request(request, level, locale, feedback),
-    }
-}
-
-fn render_group_runs(
-    group_runs: &Vec<ApicizeGroupRun>,
-    level: usize,
-    locale: &SystemLocale,
-    feedback: &mut Box<dyn Write>,
-) {
-    let prefix = String::prefix(level);
-    let count = group_runs.len();
-
-    for run in group_runs {
-        writeln!(
-            feedback,
-            "{}",
-            format!("{} Run {} of {}", &prefix, run.run_number, &count).white()
-        )
-        .unwrap();
-
-        for child in &run.children {
-            render_item(child, level + 1, locale, feedback);
+        ApicizeGroupResultContent::Results { results: entries } => {
+            render_results(entries, level + 1, locale, feedback)
         }
-
-        // render_tallies(
-        //     &group_runs.get_tallies(),
-        //     format!("Run #{} Totals", run.run_number).as_str(),
-        //     level,
-        //     locale,
-        //     feedback,
-        // );
     }
 }
 
 fn render_request(
-    request: &ApicizeRequest,
+    request: &ApicizeRequestResult,
     level: usize,
     locale: &SystemLocale,
     feedback: &mut Box<dyn Write>,
@@ -337,38 +268,203 @@ fn render_request(
     writeln!(
         feedback,
         "{}",
-        format!("{}{}", String::prefix(level), &request.name).white()
+        format!(
+            "{}{} ({} - {})",
+            String::prefix(level),
+            &request.name,
+            request.executed_at.to_min_sec_string(locale),
+            request.duration.to_ms_string(locale)
+        )
+        .white()
     )
     .unwrap();
 
-    match &request.execution {
-        ApicizeExecutionType::None => {}
-        ApicizeExecutionType::Single(execution) => {
-            render_execution(execution, level, locale, feedback);
-        }
-        ApicizeExecutionType::Runs(executions) => {
-            let count = executions.items.len();
-            let mut run_number = 0;
-            for execution in &executions.items {
-                run_number += 1;
-                writeln!(
-                    feedback,
-                    "{}",
-                    format!("{}Run {} of {}", String::prefix(level), &run_number, &count).white()
-                )
-                .unwrap();
-                render_execution(execution, level + 1, locale, feedback);
-            }
+    match &request.content {
+        ApicizeRequestResultContent::Rows { rows } => render_request_rows(rows, level, feedback),
+        ApicizeRequestResultContent::Runs { runs } => render_request_runs(runs, level, feedback),
+        ApicizeRequestResultContent::Execution { execution } => {
+            render_execution(execution, level, feedback)
         }
     }
 }
 
-fn render_execution(
-    execution: &ApicizeExecution,
+fn render_group_rows(
+    rows: &Vec<ApicizeGroupResultRow>,
     level: usize,
     locale: &SystemLocale,
     feedback: &mut Box<dyn Write>,
 ) {
+    let count = rows.len();
+    for row in rows {
+        render_group_row(row, count, level + 1, locale, feedback);
+    }
+}
+
+fn render_group_row(
+    row: &ApicizeGroupResultRow,
+    row_count: usize,
+    level: usize,
+    locale: &SystemLocale,
+    feedback: &mut Box<dyn Write>,
+) {
+    let prefix = String::prefix(level);
+
+    writeln!(
+        feedback,
+        "{}",
+        format!("{}Row {} of {}", &prefix, row.row_number, &row_count).white()
+    )
+    .unwrap();
+
+    // let count;
+    match &row.content {
+        ApicizeGroupResultRowContent::Runs { runs } => {
+            // count = runs.len();
+            render_group_runs(runs, level + 1, locale, feedback)
+        }
+        ApicizeGroupResultRowContent::Results { results: entries } => {
+            // count = entries.len();
+            render_results(entries, level + 1, locale, feedback)
+        }
+    }
+
+    // if count > 1 {
+    //     render_tallies(
+    //         &row.get_tallies(),
+    //         format!("Row #{} Totals", row.row_number).as_str(),
+    //         level,
+    //         locale,
+    //         feedback,
+    //     );
+    // }
+}
+
+fn render_request_rows(
+    rows: &Vec<ApicizeRequestResultRow>,
+    level: usize,
+    feedback: &mut Box<dyn Write>,
+) {
+    let count = rows.len();
+    for row in rows {
+        render_request_row(row, count, level + 1, feedback);
+    }
+}
+
+fn render_request_row(
+    row: &ApicizeRequestResultRow,
+    row_count: usize,
+    level: usize,
+    feedback: &mut Box<dyn Write>,
+) {
+    let prefix = String::prefix(level);
+
+    writeln!(
+        feedback,
+        "{}",
+        format!("{} Row {} of {}", &prefix, row.row_number, &row_count).white()
+    )
+    .unwrap();
+
+    match &row.results {
+        apicize_lib::ApicizeRequestResultRowContent::Runs(runs) => {
+            render_request_runs(runs, level, feedback)
+        }
+        apicize_lib::ApicizeRequestResultRowContent::Execution(execution) => {
+            render_execution(execution, level, feedback)
+        }
+    }
+
+    // render_tallies(
+    //     &row.get_tallies(),
+    //     format!("Row #{} Totals", row.row_number).as_str(),
+    //     level,
+    //     locale,
+    //     feedback,
+    // );
+}
+
+fn render_group_runs(
+    runs: &Vec<ApicizeGroupResultRun>,
+    level: usize,
+    locale: &SystemLocale,
+    feedback: &mut Box<dyn Write>,
+) {
+    let run_count = runs.len();
+    for run in runs {
+        render_group_run(run, run_count, level + 1, locale, feedback);
+    }
+}
+fn render_group_run(
+    run: &ApicizeGroupResultRun,
+    run_count: usize,
+    level: usize,
+    locale: &SystemLocale,
+    feedback: &mut Box<dyn Write>,
+) {
+    let prefix = String::prefix(level);
+
+    writeln!(
+        feedback,
+        "{}",
+        format!("{}Run {} of {}", &prefix, run.run_number, &run_count).white()
+    )
+    .unwrap();
+
+    for result in &run.results {
+        render_result(result, level + 1, locale, feedback);
+    }
+
+    // if run.results.len() > 1 {
+    //     render_tallies(
+    //         &run.results.get_tallies(),
+    //         format!("Run #{} Totals", run.run_number).as_str(),
+    //         level,
+    //         locale,
+    //         feedback,
+    //     );
+    // }
+}
+
+fn render_request_runs(
+    runs: &Vec<ApicizeRequestResultRun>,
+    level: usize,
+    feedback: &mut Box<dyn Write>,
+) {
+    let run_count = runs.len();
+    for run in runs {
+        render_request_run(run, run_count, level + 1, feedback);
+    }
+}
+fn render_request_run(
+    run: &ApicizeRequestResultRun,
+    run_count: usize,
+    level: usize,
+    feedback: &mut Box<dyn Write>,
+) {
+    let prefix = String::prefix(level);
+
+    writeln!(
+        feedback,
+        "{}",
+        format!("{} Run {} of {}", &prefix, run.run_number, &run_count).white()
+    )
+    .unwrap();
+
+    render_execution(&run.execution, level + 1, feedback);
+
+    // render_test_results(results, level, locale, feedback);
+    // render_item(child, level + 1, locale, feedback);
+
+    // render_tallies(
+    //     &group_runs.get_tallies(),
+    //     format!("Run #{} Totals", run.run_number).as_str(),
+    //     level,
+    //     locale,
+    //     feedback,
+    // );
+}
+
+fn render_execution(execution: &ApicizeExecution, level: usize, feedback: &mut Box<dyn Write>) {
     match &execution.error {
         Some(err) => {
             writeln!(
@@ -381,7 +477,7 @@ fn render_execution(
         }
         None => {
             if let Some(tests) = &execution.tests {
-                render_test_results(tests, level + 1, locale, feedback);
+                render_test_results(tests, level + 1, &Vec::new(), feedback);
             }
         }
     }
@@ -390,14 +486,13 @@ fn render_execution(
 fn render_behavior(
     behavior: &ApicizeTestBehavior,
     level: usize,
+    parents: &[String],
     feedback: &mut Box<dyn Write>,
-    name_prefix: Option<&str>,
 ) {
     let prefix = String::prefix(level);
-    let full_name = match name_prefix {
-        Some(scenario_name) => format!("{} {}", scenario_name, behavior.name),
-        None => behavior.name.to_string(),
-    };
+    let mut all_parts = Vec::from(parents);
+    all_parts.push(behavior.name.clone());
+    let full_name = all_parts.join(" ");
 
     writeln!(
         feedback,
@@ -430,43 +525,63 @@ fn render_behavior(
 fn render_test_results(
     results: &Vec<ApicizeTestResult>,
     level: usize,
-    _locale: &SystemLocale,
+    parents: &[String],
     feedback: &mut Box<dyn Write>,
 ) {
-    let prefix = String::prefix(level);
     for result in results {
         match result {
             ApicizeTestResult::Scenario(scenario) => {
                 if let Some(children) = &scenario.children {
-                    if children.len() == 1 {
-                        if let ApicizeTestResult::Behavior(behavior) = children.first().unwrap() {
-                            render_behavior(behavior, level, feedback, Some(&scenario.name));
-                            continue;
-                        }
-                    }
-
-                    writeln!(
-                        feedback,
-                        "{}{} {}",
-                        &prefix,
-                        scenario.name.bright_blue(),
-                        if scenario.success {
-                            "[PASS]".green()
-                        } else {
-                            "[FAIL]".red()
-                        }
-                    )
-                    .unwrap();
-
-                    render_test_results(children, level + 1, _locale, feedback);
+                    let mut new_parents = Vec::from(parents);
+                    new_parents.push(scenario.name.clone());
+                    render_test_results(children, level, &new_parents, feedback);
                 }
             }
             ApicizeTestResult::Behavior(behavior) => {
-                render_behavior(behavior, level, feedback, None);
+                render_behavior(behavior, level, parents, feedback);
             }
         }
     }
 }
+
+// fn render_test_result(
+//     result: &ApicizeTestResult,
+//     level: usize,
+//     _locale: &SystemLocale,
+//     feedback: &mut Box<dyn Write>,
+// ) {
+//     let prefix = String::prefix(level);
+//     match result {
+//         ApicizeTestResult::Scenario(scenario) => {
+//             if let Some(children) = &scenario.children {
+//                 if children.len() == 1 {
+//                     if let ApicizeTestResult::Behavior(behavior) = children.first().unwrap() {
+//                         render_behavior(behavior, level, feedback, Some(&scenario.name));
+//                         return;
+//                     }
+//                 }
+
+//                 writeln!(
+//                     feedback,
+//                     "{}{} {}",
+//                     &prefix,
+//                     scenario.name.bright_blue(),
+//                     if scenario.success {
+//                         "[PASS]".green()
+//                     } else {
+//                         "[FAIL]".red()
+//                     }
+//                 )
+//                 .unwrap();
+
+//                 render_test_results(children, level + 1, _locale, feedback);
+//             }
+//         }
+//         ApicizeTestResult::Behavior(behavior) => {
+//             render_behavior(behavior, level, feedback, None);
+//         }
+//     }
+// }
 
 fn render_tallies(
     tallies: &Tallies,
@@ -848,7 +963,7 @@ async fn main() {
     let runner = Arc::new(TestRunnerContext::new(
         workspace,
         None,
-        None,
+        false,
         &Some(allowed_data_path),
         enable_trace,
     ));
@@ -864,7 +979,7 @@ async fn main() {
     let mut grand_total_tallies = Tallies::default();
 
     for run_number in 0..args.runs {
-        let run_result = runner.run(&request_ids).await;
+        let run_results = runner.run(request_ids.clone()).await;
 
         if args.runs > 1 {
             writeln!(feedback).unwrap();
@@ -878,28 +993,23 @@ async fn main() {
             level += 1;
         }
 
-        match &run_result {
-            Ok(result) => {
-                grand_total_tallies.add(&result.get_tallies());
-
-                match result {
-                    ApicizeResult::Items(items) => {
-                        for item in &items.items {
-                            render_item(item, level + 1, &locale, &mut feedback);
-                        }
-                    }
-                    ApicizeResult::Rows(row_summary) => {
-                        render_row_summary(row_summary, level + 1, &locale, &mut feedback);
-                    }
+        for run_result in run_results {
+            match &run_result {
+                Ok(result) => {
+                    let tallies = result.get_tallies();
+                    failure_count =
+                        failure_count + tallies.request_failure_count + tallies.request_error_count;
+                    grand_total_tallies.add(&tallies);
+                    render_result(result, level, &locale, &mut feedback);
+                }
+                Err(err) => {
+                    eprintln!("{}", format!("Error: {}", err).red());
+                    failure_count += 1;
                 }
             }
-            Err(err) => {
-                eprintln!("{}", format!("Error: {}", err).red());
-                failure_count += 1;
-            }
-        }
 
-        output_file.runs.insert(run_number, run_result);
+            output_file.runs.insert(run_number, run_result);
+        }
     }
 
     writeln!(feedback).unwrap();
@@ -938,7 +1048,7 @@ async fn main() {
     }
 
     cleanup_v8();
-    process::exit(failure_count);
+    process::exit(failure_count.try_into().unwrap_or(-1));
 }
 
 #[derive(Serialize)]

@@ -1,5 +1,9 @@
 # Change Log
 
+# 0.17.0
+
+* Use updated Apicize lib that includes support for per-request/group data
+
 # 0.16.0
 
 * Return test results as a hierarchy of scenarios/behaviors
