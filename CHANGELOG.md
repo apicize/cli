@@ -1,5 +1,9 @@
 # Change Log
 
+# 0.18.0
+
+* Restore warning (parameter selection) functionality
+
 # 0.17.0
 
 * Use updated Apicize lib that includes support for per-request/group data

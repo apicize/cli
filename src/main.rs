@@ -816,7 +816,7 @@ async fn main() {
         }
     }
 
-    if let Some(warnings) = workspace.get_warnings() {
+    if let Some(warnings) = workspace.defaults.get_warnings() {
         for warning in warnings {
             writeln!(
                 feedback,
@@ -937,15 +937,10 @@ async fn main() {
                     }
                 };
 
-                workspace.data.insert(
-                    0,
-                    ExternalData {
-                        id: "\0".to_string(),
-                        name: String::default(),
-                        source_type,
-                        source: seed,
-                    },
-                );
+                let mut default_data = ExternalData::default();
+                default_data.source_type = source_type;
+                default_data.source = seed;
+                workspace.data.insert(0, default_data);
 
                 workspace.defaults.selected_data = Some(Selection {
                     id: "\0".to_string(),
