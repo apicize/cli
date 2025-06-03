@@ -1,5 +1,9 @@
 # Change Log
 
+# 0.19.1
+
+* Fix report functionality
+
 # 0.19.0
 
 * Add report (JSON and CSV) functionality

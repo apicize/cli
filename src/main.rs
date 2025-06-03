@@ -947,7 +947,7 @@ async fn main() {
             level += 1;
         }
 
-        for run_result in run_results {
+        for run_result in &run_results {
             match &run_result {
                 Ok(result) => {
                     let tallies = result.get_tallies();
@@ -961,9 +961,8 @@ async fn main() {
                     failure_count += 1;
                 }
             }
-
-            output_file.runs.insert(run_number, run_result);
         }
+        output_file.runs.insert(run_number, run_results);
     }
 
     if !send_output_to.is_empty() {
@@ -996,19 +995,20 @@ async fn main() {
             ExecutionReportFormat::JSON
         };
 
-        let all_summaries: Vec<Vec<ExecutionResultSummary>> = output_file
+        let all_summaries = output_file
             .runs
-            .into_values()
-            .filter_map(|r| match r {
-                Ok(result) => {
+            .into_iter()
+            .map(|(run_number, results)| {
+                let mut combined = Vec::<Vec<ExecutionResultSummary>>::new();
+                for result in results.into_iter().flatten() {
                     let (summaries, _) = result.assemble_results();
-                    Some(summaries)
+                    combined.push(summaries);
                 }
-                Err(_) => None,
+                (run_number + 1, combined)
             })
-            .collect();
+            .collect::<HashMap<usize, Vec<Vec<ExecutionResultSummary>>>>();
 
-        match Workspace::geneate_multirun_report(&all_summaries, format) {
+        match Workspace::generate_multirun_report(all_summaries, format) {
             Ok(generated_report) => match fs::write(&report_filename, &generated_report) {
                 Ok(_) => {
                     writeln!(feedback, "Report written to {}", report_filename.blue()).unwrap()
@@ -1038,7 +1038,7 @@ async fn main() {
 
 #[derive(Serialize)]
 struct OutputFile {
-    pub runs: HashMap<usize, Result<ApicizeResult, ApicizeError>>,
+    pub runs: HashMap<usize, Vec<Result<ApicizeResult, ApicizeError>>>,
 }
 
 /// Apicize application settings
