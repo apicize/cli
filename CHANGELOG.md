@@ -1,5 +1,9 @@
 # Change Log
 
+# 0.19.0
+
+* Add report (JSON and CSV) functionality
+
 # 0.18.0
 
 * Restore warning (parameter selection) functionality

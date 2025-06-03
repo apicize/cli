@@ -4,8 +4,9 @@ use apicize_lib::{
     ApicizeGroupResultContent, ApicizeGroupResultRow, ApicizeGroupResultRowContent,
     ApicizeGroupResultRun, ApicizeRequestResult, ApicizeRequestResultContent,
     ApicizeRequestResultRow, ApicizeRequestResultRun, ApicizeResult, ApicizeRunner,
-    ApicizeTestBehavior, ApicizeTestResult, ExternalData, ExternalDataSourceType, Identifiable,
-    Parameters, Selection, Tallies, Tally, TestRunnerContext, Warnings, Workspace,
+    ApicizeTestBehavior, ExecutionReportFormat, ExecutionResultSummary, ExternalData,
+    ExternalDataSourceType, Identifiable, Parameters, Selection, Tallies, Tally, TestRunnerContext,
+    Warnings, Workspace,
 };
 use clap::Parser;
 use colored::Colorize;
@@ -31,11 +32,17 @@ struct Args {
     /// Name of the file to process (or - to read STDIN)
     file: String,
     /// Number of times to run workbook (runs are sequential)
-    #[arg(short, long, default_value_t = 1)]
+    #[arg(long, default_value_t = 1)]
     runs: usize,
     /// Name of the output file name for test results (or - to write to STDOUT)
     #[arg(short, long)]
     output: Option<String>,
+    /// Name of the  report file name
+    #[arg(short, long)]
+    report: Option<String>,
+    /// Format of output file
+    #[arg(short, long, default_value("json"), value_parser(["csv","json"]))]
+    format: String,
     /// Name of the output file name for tracing HTTP traffic
     #[arg(short, long)]
     trace: Option<String>,
@@ -523,65 +530,15 @@ fn render_behavior(
 }
 
 fn render_test_results(
-    results: &Vec<ApicizeTestResult>,
+    results: &Vec<ApicizeTestBehavior>,
     level: usize,
     parents: &[String],
     feedback: &mut Box<dyn Write>,
 ) {
     for result in results {
-        match result {
-            ApicizeTestResult::Scenario(scenario) => {
-                if let Some(children) = &scenario.children {
-                    let mut new_parents = Vec::from(parents);
-                    new_parents.push(scenario.name.clone());
-                    render_test_results(children, level, &new_parents, feedback);
-                }
-            }
-            ApicizeTestResult::Behavior(behavior) => {
-                render_behavior(behavior, level, parents, feedback);
-            }
-        }
+        render_behavior(result, level, parents, feedback);
     }
 }
-
-// fn render_test_result(
-//     result: &ApicizeTestResult,
-//     level: usize,
-//     _locale: &SystemLocale,
-//     feedback: &mut Box<dyn Write>,
-// ) {
-//     let prefix = String::prefix(level);
-//     match result {
-//         ApicizeTestResult::Scenario(scenario) => {
-//             if let Some(children) = &scenario.children {
-//                 if children.len() == 1 {
-//                     if let ApicizeTestResult::Behavior(behavior) = children.first().unwrap() {
-//                         render_behavior(behavior, level, feedback, Some(&scenario.name));
-//                         return;
-//                     }
-//                 }
-
-//                 writeln!(
-//                     feedback,
-//                     "{}{} {}",
-//                     &prefix,
-//                     scenario.name.bright_blue(),
-//                     if scenario.success {
-//                         "[PASS]".green()
-//                     } else {
-//                         "[FAIL]".red()
-//                     }
-//                 )
-//                 .unwrap();
-
-//                 render_test_results(children, level + 1, _locale, feedback);
-//             }
-//         }
-//         ApicizeTestResult::Behavior(behavior) => {
-//             render_behavior(behavior, level, feedback, None);
-//         }
-//     }
-// }
 
 fn render_tallies(
     tallies: &Tallies,
@@ -937,9 +894,11 @@ async fn main() {
                     }
                 };
 
-                let mut default_data = ExternalData::default();
-                default_data.source_type = source_type;
-                default_data.source = seed;
+                let default_data = ExternalData {
+                    source_type,
+                    source: seed,
+                    ..Default::default()
+                };
                 workspace.data.insert(0, default_data);
 
                 workspace.defaults.selected_data = Some(Selection {
@@ -1007,16 +966,8 @@ async fn main() {
         }
     }
 
-    writeln!(feedback).unwrap();
-    render_tallies(
-        &grand_total_tallies,
-        "Grand Total",
-        0,
-        &locale,
-        &mut feedback,
-    );
-
     if !send_output_to.is_empty() {
+        writeln!(feedback).unwrap();
         let serialized = serde_json::to_string(&output_file).unwrap();
 
         let dest: &str;
@@ -1030,17 +981,56 @@ async fn main() {
 
         writeln!(feedback).unwrap();
         match result {
-            Ok(_) => writeln!(
-                feedback,
-                "{}",
-                format!("Test results written to {}", dest).blue()
-            )
-            .unwrap(),
+            Ok(_) => writeln!(feedback, "Test results written to {}", dest.blue()).unwrap(),
             Err(ref err) => {
                 panic!("Unable to write {} - {}", dest, err)
             }
         }
     }
+
+    if let Some(report_filename) = args.report {
+        writeln!(feedback).unwrap();
+        let format = if args.format == "csv" {
+            ExecutionReportFormat::CSV
+        } else {
+            ExecutionReportFormat::JSON
+        };
+
+        let all_summaries: Vec<Vec<ExecutionResultSummary>> = output_file
+            .runs
+            .into_values()
+            .filter_map(|r| match r {
+                Ok(result) => {
+                    let (summaries, _) = result.assemble_results();
+                    Some(summaries)
+                }
+                Err(_) => None,
+            })
+            .collect();
+
+        match Workspace::geneate_multirun_report(&all_summaries, format) {
+            Ok(generated_report) => match fs::write(&report_filename, &generated_report) {
+                Ok(_) => {
+                    writeln!(feedback, "Report written to {}", report_filename.blue()).unwrap()
+                }
+                Err(ref err) => {
+                    panic!("Unable to write report to {} - {}", report_filename, err)
+                }
+            },
+            Err(err) => {
+                panic!("Unable to generate report - {}", err);
+            }
+        }
+    }
+
+    writeln!(feedback).unwrap();
+    render_tallies(
+        &grand_total_tallies,
+        "Grand Total",
+        0,
+        &locale,
+        &mut feedback,
+    );
 
     cleanup_v8();
     process::exit(failure_count.try_into().unwrap_or(-1));
