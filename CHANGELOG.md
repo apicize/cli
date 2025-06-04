@@ -1,5 +1,10 @@
 # Change Log
 
+# 0.19.2
+
+* Add substitution to test text
+* Fix populating form data
+
 # 0.19.1
 
 * Fix report functionality
