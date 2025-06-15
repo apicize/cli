@@ -99,7 +99,7 @@ dependencies = [
 
 [[package]]
 name = "apicize-run"
-version = "0.20.0"
+version = "0.20.1"
 dependencies = [
  "apicize_lib",
  "async-trait",

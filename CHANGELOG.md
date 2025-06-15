@@ -1,5 +1,9 @@
 # Change Log
 
+# 0.20.1
+
+* Test framework: Add body type and refine $ values
+
 # 0.20.0
 
 * Support keep alive, allow invalid certs and number of redirect options
