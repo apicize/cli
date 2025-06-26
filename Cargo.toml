@@ -14,7 +14,7 @@ rust-version = "1.82"
 
 [dependencies]
 # apicize_lib = { path = "../lib-rust" }
-apicize_lib = { version = "^0.24.1" }
+apicize_lib = { version = "^0.24.5" }
 async-trait = "0.1.86"
 clap = { version = "4.5.19", features = ["derive"] }
 colored = "2.1.0"

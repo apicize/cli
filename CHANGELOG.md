@@ -1,5 +1,9 @@
 # Change Log
 
+# 0.20.2
+
+* Update jp to return arrays
+
 # 0.20.1
 
 * Test framework: Add body type and refine $ values
