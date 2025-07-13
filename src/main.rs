@@ -37,10 +37,19 @@ struct Args {
     /// Name of the output file name for test results (or - to write to STDOUT)
     #[arg(short, long)]
     output: Option<String>,
-    /// Name of the  report file name
+    /// File name for JSON report
+    #[arg(long)]
+    report_json: Option<String>,
+    /// File name for CSV report
+    #[arg(long)]
+    report_csv: Option<String>,
+    /// File name for simplified Zephyr report
+    #[arg(long)]
+    report_zephyr: Option<String>,
+    /// Name of the report file name (DEPRECATED - use report_* arguments instead)
     #[arg(short, long)]
     report: Option<String>,
-    /// Format of output file
+    /// Format of output file (DEPRECATED - use report_* arguments instead)
     #[arg(short, long, default_value("json"), value_parser(["csv","json"]))]
     format: String,
     /// Name of the output file name for tracing HTTP traffic
@@ -409,7 +418,6 @@ fn render_group_run(
     feedback: &mut Box<dyn Write>,
 ) {
     let prefix = String::prefix(level);
-
     writeln!(
         feedback,
         "{}",
@@ -483,6 +491,9 @@ fn render_execution(execution: &ApicizeExecution, level: usize, feedback: &mut B
             .unwrap();
         }
         None => {
+            if let Some(url) = &execution.url {
+                writeln!(feedback, "{}{}", &String::prefix(level + 1), url.cyan(),).unwrap();
+            }
             if let Some(tests) = &execution.tests {
                 render_test_results(tests, level + 1, &Vec::new(), feedback);
             }
@@ -501,11 +512,16 @@ fn render_behavior(
     all_parts.push(behavior.name.clone());
     let full_name = all_parts.join(" ");
 
+    let tag = match &behavior.tag {
+        Some(t) => format!(" ({})", t),
+        None => "".to_string(),
+    };
     writeln!(
         feedback,
-        "{}{} {}",
+        "{}{}{} {}",
         &prefix,
         full_name.bright_blue(),
+        tag.white(),
         if behavior.error.is_some() {
             "[ERROR]".red()
         } else if behavior.success {
@@ -692,14 +708,11 @@ async fn main() {
     if args.info {
         writeln!(
             feedback,
-            "Global parameters: {}",
-            globals_filename.to_string_lossy()
+            "{}{}",
+            "Global parameters: ".white(),
+            globals_filename.to_string_lossy().blue(),
         )
         .unwrap();
-    }
-
-    if let Some(trace_file_name) = &args.trace {
-        writeln!(feedback, "Trace HTTP : {}", trace_file_name).unwrap();
     }
 
     let locale = SystemLocale::default().unwrap();
@@ -748,8 +761,9 @@ async fn main() {
 
         writeln!(
             feedback,
-            "{}",
-            format!("Opening {}", &file_name.to_string_lossy()).white()
+            "{}{}",
+            "Opening ".white(),
+            &file_name.to_string_lossy().blue()
         )
         .unwrap();
 
@@ -794,6 +808,16 @@ async fn main() {
                 .unwrap();
             }
         }
+    }
+
+    if let Some(trace_file_name) = &args.trace {
+        writeln!(
+            feedback,
+            "{}{}",
+            "Trace HTTP: ".white(),
+            trace_file_name.blue(),
+        )
+        .unwrap();
     }
 
     let request_ids = workspace.requests.top_level_ids.to_owned();
@@ -987,13 +1011,22 @@ async fn main() {
         }
     }
 
-    if let Some(report_filename) = args.report {
+    let mut report_json = args.report_json;
+    let mut report_csv = args.report_csv;
+    let report_zephyr = args.report_zephyr;
+
+    // Map deprecated --report arguments
+    if let Some(report) = &args.report {
+        writeln!(feedback, "{}", "Warning:  --report/--format are deprecated, use --report_* arguments instead".yellow()).unwrap();
+        match args.format.as_str() {
+            "json" => report_json = Some(report.clone()),
+            "csv" => report_csv = Some(report.clone()),
+            _ => panic!("Invalid report format \"{}\"", args.format),
+        }
+    }
+
+    if report_json.is_some() || report_csv.is_some() || report_zephyr.is_some() {
         writeln!(feedback).unwrap();
-        let format = if args.format == "csv" {
-            ExecutionReportFormat::CSV
-        } else {
-            ExecutionReportFormat::JSON
-        };
 
         let all_summaries = output_file
             .runs
@@ -1008,18 +1041,39 @@ async fn main() {
             })
             .collect::<HashMap<usize, Vec<Vec<ExecutionResultSummary>>>>();
 
-        match Workspace::generate_multirun_report(all_summaries, format) {
-            Ok(generated_report) => match fs::write(&report_filename, &generated_report) {
-                Ok(_) => {
-                    writeln!(feedback, "Report written to {}", report_filename.blue()).unwrap()
+        let mut write_report = |filename: &str, format: ExecutionReportFormat| {
+            match Workspace::generate_multirun_report(&all_summaries, &format) {
+                Ok(generated_report) => match fs::write(filename, &generated_report) {
+                    Ok(_) => writeln!(
+                        feedback,
+                        "{} report written to {}",
+                        format!("{}", format).white(),
+                        filename.blue()
+                    )
+                    .unwrap(),
+                    Err(ref err) => {
+                        panic!(
+                            "Unable to write {}, report to {} - {}",
+                            format, filename, err
+                        )
+                    }
+                },
+                Err(err) => {
+                    panic!("Unable to generate {} report - {}", format, err);
                 }
-                Err(ref err) => {
-                    panic!("Unable to write report to {} - {}", report_filename, err)
-                }
-            },
-            Err(err) => {
-                panic!("Unable to generate report - {}", err);
             }
+        };
+
+        if let Some(report_filename) = report_json {
+            write_report(&report_filename, ExecutionReportFormat::JSON);
+        }
+
+        if let Some(report_filename) = report_csv {
+            write_report(&report_filename, ExecutionReportFormat::CSV);
+        }
+
+        if let Some(report_filename) = report_zephyr {
+            write_report(&report_filename, ExecutionReportFormat::ZEPHYR);
         }
     }
 

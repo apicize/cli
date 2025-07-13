@@ -1,5 +1,12 @@
 # Change Log
 
+# 0.21.0
+
+* Add "tag" test function to store tag with executed tests
+* Include URL and tag in execution results
+* Add --report_* arguments in favor of deprecated --report/--format arguments
+* Add simplified Zephyr output
+
 # 0.20.2
 
 * Update jp to return arrays
