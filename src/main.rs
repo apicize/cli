@@ -492,7 +492,18 @@ fn render_execution(execution: &ApicizeExecution, level: usize, feedback: &mut B
         }
         None => {
             if let Some(url) = &execution.url {
-                writeln!(feedback, "{}{}", &String::prefix(level + 1), url.cyan(),).unwrap();
+                let method = match &execution.method {
+                    Some(m) => format!("{} ", m),
+                    None => "".to_string(),
+                };
+                writeln!(
+                    feedback,
+                    "{}{}{}",
+                    &String::prefix(level + 1),
+                    method.cyan(),
+                    url.cyan(),
+                )
+                .unwrap();
             }
             if let Some(tests) = &execution.tests {
                 render_test_results(tests, level + 1, &Vec::new(), feedback);
@@ -1017,7 +1028,12 @@ async fn main() {
 
     // Map deprecated --report arguments
     if let Some(report) = &args.report {
-        writeln!(feedback, "{}", "Warning:  --report/--format are deprecated, use --report_* arguments instead".yellow()).unwrap();
+        writeln!(
+            feedback,
+            "{}",
+            "Warning:  --report/--format are deprecated, use --report_* arguments instead".yellow()
+        )
+        .unwrap();
         match args.format.as_str() {
             "json" => report_json = Some(report.clone()),
             "csv" => report_csv = Some(report.clone()),
