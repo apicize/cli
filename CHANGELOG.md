@@ -1,5 +1,9 @@
 # Change Log
 
+# 0.21.2
+
+* Update Zephyr output to only include tagged entries
+
 # 0.21.1
 
 * Include method along with in execution results
