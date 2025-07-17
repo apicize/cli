@@ -115,7 +115,7 @@ impl FormatHelper for String {
         let t = if title.is_empty() {
             String::new()
         } else {
-            format!(" {} ", title)
+            format!(" {title} ")
         };
         format!("{:-^1$}", t, 32)
     }
@@ -493,7 +493,7 @@ fn render_execution(execution: &ApicizeExecution, level: usize, feedback: &mut B
         None => {
             if let Some(url) = &execution.url {
                 let method = match &execution.method {
-                    Some(m) => format!("{} ", m),
+                    Some(m) => format!("{m} "),
                     None => "".to_string(),
                 };
                 writeln!(
@@ -524,7 +524,7 @@ fn render_behavior(
     let full_name = all_parts.join(" ");
 
     let tag = match &behavior.tag {
-        Some(t) => format!(" ({})", t),
+        Some(t) => format!(" ({t})"),
         None => "".to_string(),
     };
     writeln!(
@@ -680,7 +680,7 @@ fn find_selection<T: Identifiable>(
         } else {
             eprintln!(
                 "{}",
-                format!("Unable to locate {} \"{}\"", label, selection).red()
+                format!("Unable to locate {label} \"{selection}\"").red()
             );
             process::exit(-3);
         }
@@ -919,11 +919,8 @@ async fn main() {
                     _ => {
                         eprintln!(
                             "{}",
-                            format!(
-                                "Error: seed file \"{}\" does not end with .csv or .json",
-                                seed
-                            )
-                            .red()
+                            format!("Error: seed file \"{seed}\" does not end with .csv or .json",)
+                                .red()
                         );
                         std::process::exit(-1);
                     }
@@ -941,7 +938,7 @@ async fn main() {
                     name: "Command line seed".to_string(),
                 });
             } else {
-                eprintln!("{}", format!("Error: seed \"{}\" not found", seed).red());
+                eprintln!("{}", format!("Error: seed \"{seed}\" not found").red());
 
                 std::process::exit(-1);
             }
@@ -992,7 +989,7 @@ async fn main() {
                     render_result(result, level, &locale, &mut feedback);
                 }
                 Err(err) => {
-                    eprintln!("{}", format!("Error: {}", err).red());
+                    eprintln!("{}", format!("Error: {err}").red());
                     failure_count += 1;
                 }
             }
@@ -1007,7 +1004,7 @@ async fn main() {
         let dest: &str;
         let result = if send_output_to == "-" {
             dest = "STDOUT";
-            write!(stdout(), "{}", serialized)
+            write!(stdout(), "{serialized}")
         } else {
             dest = send_output_to.as_str();
             fs::write(&send_output_to, serialized)
@@ -1017,7 +1014,7 @@ async fn main() {
         match result {
             Ok(_) => writeln!(feedback, "Test results written to {}", dest.blue()).unwrap(),
             Err(ref err) => {
-                panic!("Unable to write {} - {}", dest, err)
+                panic!("Unable to write {dest} - {err}")
             }
         }
     }
@@ -1063,19 +1060,16 @@ async fn main() {
                     Ok(_) => writeln!(
                         feedback,
                         "{} report written to {}",
-                        format!("{}", format).white(),
+                        format!("{format}").white(),
                         filename.blue()
                     )
                     .unwrap(),
                     Err(ref err) => {
-                        panic!(
-                            "Unable to write {}, report to {} - {}",
-                            format, filename, err
-                        )
+                        panic!("Unable to write {format}, report to {filename} - {err}",)
                     }
                 },
                 Err(err) => {
-                    panic!("Unable to generate {} report - {}", format, err);
+                    panic!("Unable to generate {format} report - {err}");
                 }
             }
         };
