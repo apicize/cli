@@ -1,5 +1,9 @@
 # Change Log
 
+# 0.21.4
+
+* Throw error if invalid property specified in tag handlebar
+
 # 0.21.3
 
 * Allow handlebars in tag names to pull in values (data, scenario, output)
