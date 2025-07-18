@@ -42,7 +42,21 @@ Once your pipeline saves this file, you can use the `--globals` parameter to ref
 
 Note that parameters can be matched by Name, as well as ID.
 
+## Dockerfile install
+
+```dockerfile
+#############################################################################
+# Install Apicize
+#############################################################################
+RUN wget https://github.com/apicize/cli/releases/download/apicize-cli-v0.21.3/Apicize-run_0.21.3_amd64.deb
+RUN apt install ./Apicize-run_0.21.3_amd64.deb
+RUN rm -f Apicize-run_0.21.3_amd64.deb
+```
+
+
 ## To-Do
 
 * Create Windows and MacOS executables and installers
+
+
 
