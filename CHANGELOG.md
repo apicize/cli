@@ -1,5 +1,9 @@
 # Change Log
 
+# 0.21.5
+
+* Fix Zephyr report to say "Passed" instead of "Success"
+
 # 0.21.4
 
 * Throw error if invalid property specified in tag handlebar
