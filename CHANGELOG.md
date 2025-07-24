@@ -1,5 +1,9 @@
 # Change Log
 
+# 0.22.0
+
+* Support Key property for requests and groups, add to reporting
+
 # 0.21.5
 
 * Fix Zephyr report to say "Passed" instead of "Success"

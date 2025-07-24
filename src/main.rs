@@ -1,12 +1,6 @@
 use apicize_lib::test_runner::cleanup_v8;
 use apicize_lib::{
-    open_data_stream, ApicizeError, ApicizeExecution, ApicizeGroupResult,
-    ApicizeGroupResultContent, ApicizeGroupResultRow, ApicizeGroupResultRowContent,
-    ApicizeGroupResultRun, ApicizeRequestResult, ApicizeRequestResultContent,
-    ApicizeRequestResultRow, ApicizeRequestResultRun, ApicizeResult, ApicizeRunner,
-    ApicizeTestBehavior, ExecutionReportFormat, ExecutionResultSummary, ExternalData,
-    ExternalDataSourceType, Identifiable, Parameters, Selection, Tallies, Tally, TestRunnerContext,
-    Warnings, Workspace,
+    open_data_stream, ApicizeError, ApicizeExecution, ApicizeGroupResult, ApicizeGroupResultContent, ApicizeGroupResultRow, ApicizeGroupResultRowContent, ApicizeGroupResultRun, ApicizeRequestResult, ApicizeRequestResultContent, ApicizeRequestResultRow, ApicizeRequestResultRun, ApicizeResult, ApicizeRunner, ApicizeTestBehavior, ExecutionReportFormat, ExecutionResultBuilder, ExecutionResultSummary, ExternalData, ExternalDataSourceType, Identifiable, Parameters, Selection, Tallies, Tally, TestRunnerContext, Warnings, Workspace
 };
 use clap::Parser;
 use colored::Colorize;
@@ -1045,14 +1039,14 @@ async fn main() {
             .runs
             .into_iter()
             .map(|(run_number, results)| {
-                let mut combined = Vec::<Vec<ExecutionResultSummary>>::new();
+                let mut builder = ExecutionResultBuilder::new(&runner);
                 for result in results.into_iter().flatten() {
-                    let (summaries, _) = result.assemble_results();
-                    combined.push(summaries);
+                    builder.assemble(result);
                 }
+                let (combined, _) = builder.get_results();
                 (run_number + 1, combined)
             })
-            .collect::<HashMap<usize, Vec<Vec<ExecutionResultSummary>>>>();
+            .collect::<HashMap<usize, Vec<ExecutionResultSummary>>>();
 
         let mut write_report = |filename: &str, format: ExecutionReportFormat| {
             match Workspace::generate_multirun_report(&all_summaries, &format) {
