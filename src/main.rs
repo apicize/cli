@@ -37,9 +37,6 @@ struct Args {
     /// File name for CSV report
     #[arg(long)]
     report_csv: Option<String>,
-    /// File name for simplified Zephyr report
-    #[arg(long)]
-    report_zephyr: Option<String>,
     /// Name of the report file name (DEPRECATED - use report_* arguments instead)
     #[arg(short, long)]
     report: Option<String>,
@@ -1015,7 +1012,6 @@ async fn main() {
 
     let mut report_json = args.report_json;
     let mut report_csv = args.report_csv;
-    let report_zephyr = args.report_zephyr;
 
     // Map deprecated --report arguments
     if let Some(report) = &args.report {
@@ -1032,7 +1028,7 @@ async fn main() {
         }
     }
 
-    if report_json.is_some() || report_csv.is_some() || report_zephyr.is_some() {
+    if report_json.is_some() || report_csv.is_some() {
         writeln!(feedback).unwrap();
 
         let all_summaries = output_file
@@ -1074,10 +1070,6 @@ async fn main() {
 
         if let Some(report_filename) = report_csv {
             write_report(&report_filename, ExecutionReportFormat::CSV);
-        }
-
-        if let Some(report_filename) = report_zephyr {
-            write_report(&report_filename, ExecutionReportFormat::ZEPHYR);
         }
     }
 

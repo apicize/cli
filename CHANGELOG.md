@@ -1,5 +1,9 @@
 # Change Log
 
+# 0.23.0
+
+* Remove Zephyr report format
+
 # 0.22.0
 
 * Support Key property for requests and groups, add to reporting
