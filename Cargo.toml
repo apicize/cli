@@ -29,6 +29,9 @@ tokio = "1.35.1"
 [target.x86_64-unknown-linux-gnu.dependencies]
 openssl = { version = "0.10", features = ["vendored"] }
 
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["errhandlingapi", "handleapi", "processenv", "winbase", "winuser", "winerror"] }
+
 [profile.release]
 opt-level = 'z'     # Optimize for size
 lto = true          # Enable link-time optimization
