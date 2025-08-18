@@ -56,7 +56,7 @@ release = "1"
 
 [package.metadata.wix]
 upgrade-guid = "D4F6F8A0-3B1A-4C8D-9E2F-1A2B3C4D5E6F"
-path-guid = "E5F7F9B1-4C2B-5D9E-AF3F-2B3C4D5E6F7G"
+path-guid = "E5F7F9B1-4C2B-5D9E-AF3F-2B3C4D5E6F7F"
 license = false
 eula = false
 
