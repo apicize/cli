@@ -1,5 +1,9 @@
 # Change Log
 
+# 0.23.2
+
+* Add Windows MSI installer
+
 # 0.23.1
 
 * Support setting request and group runs to zero

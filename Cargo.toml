@@ -1,6 +1,6 @@
 [package]
 name = "apicize-run"
-version = "0.23.1"
+version = "0.23.2"
 description = "Apicize CLI test runner"
 authors = ["Apicize"]
 license = "MIT"
@@ -50,4 +50,10 @@ assets = [
     { source = "./target/x86_64-unknown-linux-gnu/release/apicize-run", dest = "/usr/bin/apicize-run", mode = "755" }
 ]
 release = "1"
+
+[package.metadata.wix]
+upgrade-guid = "D4F6F8A0-3B1A-4C8D-9E2F-1A2B3C4D5E6F"
+path-guid = "E5F7F9B1-4C2B-5D9E-AF3F-2B3C4D5E6F7G"
+license = false
+eula = false
 
