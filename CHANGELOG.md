@@ -1,5 +1,9 @@
 # Change Log
 
+# 0.24.0
+
+* Add --validate argument
+
 # 0.23.2
 
 * Add Windows MSI installer
