@@ -11,6 +11,12 @@
       "program": "${workspaceFolder}/target/debug/apicize-run",
       "preLaunchTask": "rust: build cli",
       "args": [
+        "--report-zephyr",
+        "/tmp/zephyr.json",
+        "--report-json",
+        "/tmp/apicize-report.json",
+        "--trace",
+        "/tmp/trace.txt",
         "demo"
       ],
       "env": {

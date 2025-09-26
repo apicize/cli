@@ -1,5 +1,29 @@
 # Change Log
 
+# 0.24.0
+
+* Add --validate argument
+
+# 0.23.2
+
+* Add Windows MSI installer
+
+# 0.23.1
+
+* Support setting request and group runs to zero
+
+# 0.23.0
+
+* Remove Zephyr report format
+
+# 0.22.0
+
+* Support Key property for requests and groups, add to reporting
+
+# 0.21.5
+
+* Fix Zephyr report to say "Passed" instead of "Success"
+
 # 0.21.4
 
 * Throw error if invalid property specified in tag handlebar

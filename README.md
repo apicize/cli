@@ -19,6 +19,7 @@ Run `apicize-run [workbook]`, where `workbook` is the
 * `--seed <SEED DATA>`:  Executes workbook requests using the Seed data specified by name or path.
 * `--output <OUTPUT>`:  Sends JSON-formatted test output to the file specified in `<OUTPUT>`.  Setting this value to a single hyphen ("-") will output test output to STDOUT, and progress information to STDERR.
 * `--globals <GLOBALS>`:  Specifies location of global parameters file containing scenarios, authentications, certificates, proxies
+* `--validate`:  Validate workbook file
 * `--info`: Print information about location of global parameters and default workbooks directory
 * `--help`: Print help information
 * `--version`: Print version

@@ -1,12 +1,11 @@
 use apicize_lib::test_runner::cleanup_v8;
 use apicize_lib::{
-    open_data_stream, ApicizeError, ApicizeExecution, ApicizeGroupResult,
-    ApicizeGroupResultContent, ApicizeGroupResultRow, ApicizeGroupResultRowContent,
-    ApicizeGroupResultRun, ApicizeRequestResult, ApicizeRequestResultContent,
-    ApicizeRequestResultRow, ApicizeRequestResultRun, ApicizeResult, ApicizeRunner,
-    ApicizeTestBehavior, ExecutionReportFormat, ExecutionResultSummary, ExternalData,
-    ExternalDataSourceType, Identifiable, Parameters, Selection, Tallies, Tally, TestRunnerContext,
-    Warnings, Workspace,
+    ApicizeError, ApicizeExecution, ApicizeGroupResult, ApicizeGroupResultContent,
+    ApicizeGroupResultRow, ApicizeGroupResultRowContent, ApicizeGroupResultRun,
+    ApicizeRequestResult, ApicizeRequestResultContent, ApicizeRequestResultRow,
+    ApicizeRequestResultRun, ApicizeResult, ApicizeRunner, ApicizeTestBehavior,
+    ExecutionReportFormat, ExecutionResultBuilder, ExecutionResultSummary, Parameters, Tallies,
+    Tally, TestRunnerContext, Warnings, Workspace,
 };
 use clap::Parser;
 use colored::Colorize;
@@ -17,9 +16,8 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env::current_exe;
-use std::ffi::OsStr;
 use std::fs::File;
-use std::io::{stderr, stdin, stdout, Write};
+use std::io::{stderr, stdout, Write};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Arc, OnceLock};
@@ -43,9 +41,6 @@ struct Args {
     /// File name for CSV report
     #[arg(long)]
     report_csv: Option<String>,
-    /// File name for simplified Zephyr report
-    #[arg(long)]
-    report_zephyr: Option<String>,
     /// Name of the report file name (DEPRECATED - use report_* arguments instead)
     #[arg(short, long)]
     report: Option<String>,
@@ -73,6 +68,9 @@ struct Args {
     /// Default proxy (ID or name) to use for requests
     #[arg(long)]
     default_proxy: Option<String>,
+    /// If set, the script and arguments will be validated but tests will not be run
+    #[arg(long, default_value_t = false)]
+    validate: bool,
     /// If set, output will not use color
     #[arg(long, default_value_t = false)]
     no_color: bool,
@@ -117,7 +115,7 @@ impl FormatHelper for String {
         } else {
             format!(" {title} ")
         };
-        format!("{:-^1$}", t, 32)
+        format!("{:-^1$}", t, 40)
     }
 }
 
@@ -126,7 +124,7 @@ impl FormatHelper for String {
 fn find_workbook(
     file_name: PathBuf,
     feedback: &mut Box<dyn Write>,
-) -> Result<PathBuf, std::io::Error> {
+) -> Result<PathBuf, ApicizeError> {
     if file_name.is_file() {
         return Ok(file_name);
     }
@@ -151,8 +149,10 @@ fn find_workbook(
     if let Some(config_path) = config_dir() {
         let settings_file_name = config_path.join("apicize").join("settings.json");
         if Path::new(&settings_file_name).is_file() {
-            match serde_json::from_reader::<File, ApicizeSettings>(File::open(&settings_file_name)?)
-            {
+            let f = File::open(&settings_file_name).map_err(|err| {
+                ApicizeError::from_io(err, Some(settings_file_name.to_string_lossy().to_string()))
+            })?;
+            match serde_json::from_reader::<File, ApicizeSettings>(f) {
                 Ok(config) => {
                     if let Some(workbook_directory) = config.workbook_directory {
                         configured_workbook_directory =
@@ -213,10 +213,9 @@ fn find_workbook(
         }
     }
 
-    Err(std::io::Error::new(
-        std::io::ErrorKind::NotFound,
-        "Workbook not found",
-    ))
+    Err(ApicizeError::Error {
+        description: "Workbook not found".to_string(),
+    })
 }
 
 fn render_results(
@@ -480,31 +479,31 @@ fn render_request_run(
 }
 
 fn render_execution(execution: &ApicizeExecution, level: usize, feedback: &mut Box<dyn Write>) {
+    let method = match &execution.method {
+        Some(m) => format!("{m} "),
+        None => "".to_string(),
+    };
+    if let Some(url) = &execution.url {
+        writeln!(
+            feedback,
+            "{}{}{}",
+            &String::prefix(level + 1),
+            method.cyan(),
+            url.cyan(),
+        )
+        .unwrap();
+    }
     match &execution.error {
         Some(err) => {
             writeln!(
                 feedback,
                 "{}{}",
-                &String::prefix(level + 1),
+                &String::prefix(level + 2),
                 err.to_string().red()
             )
             .unwrap();
         }
         None => {
-            if let Some(url) = &execution.url {
-                let method = match &execution.method {
-                    Some(m) => format!("{m} "),
-                    None => "".to_string(),
-                };
-                writeln!(
-                    feedback,
-                    "{}{}{}",
-                    &String::prefix(level + 1),
-                    method.cyan(),
-                    url.cyan(),
-                )
-                .unwrap();
-            }
             if let Some(tests) = &execution.tests {
                 render_test_results(tests, level + 1, &Vec::new(), feedback);
             }
@@ -527,25 +526,30 @@ fn render_behavior(
         Some(t) => format!(" ({t})"),
         None => "".to_string(),
     };
+
     writeln!(
         feedback,
         "{}{}{} {}",
         &prefix,
         full_name.bright_blue(),
         tag.white(),
-        if behavior.error.is_some() {
-            "[ERROR]".red()
-        } else if behavior.success {
+        // if behavior.error.is_some() {
+        //     if let Some(err) = &behavior.error {
+        //         println!("Error: {err}");
+        //     }
+        //     "[ERROR]".red()
+        // }
+        if behavior.success {
             "[PASS]".green()
         } else {
-            "[FAIL]".red()
+            "[FAIL]".yellow()
         }
     )
     .unwrap();
 
     if let Some(error) = &behavior.error {
         let prefix1 = format!("{:width$}", "", width = (level + 1) * 3);
-        writeln!(feedback, "{}{}", prefix1, error.red()).unwrap();
+        writeln!(feedback, "{}{}", prefix1, error.yellow()).unwrap();
     }
 
     if let Some(logs) = &behavior.logs {
@@ -657,38 +661,6 @@ fn render_tallies(
 static LOGGER: OnceLock<ReqwestLogger> = OnceLock::new();
 static TRACE_FILE: OnceLock<File> = OnceLock::new();
 
-/// Return matching selection (if any)
-fn find_selection<T: Identifiable>(
-    requested_selection: &Option<String>,
-    entities: &HashMap<String, T>,
-    label: &str,
-) -> Option<Selection> {
-    if let Some(selection) = requested_selection {
-        let matching: Option<&T> = entities.iter().find_map(|(id, e)| {
-            if id == selection || e.get_name() == selection {
-                Some(e)
-            } else {
-                None
-            }
-        });
-
-        if let Some(e) = matching {
-            Some(Selection {
-                id: e.get_id().to_owned(),
-                name: "".to_string(),
-            })
-        } else {
-            eprintln!(
-                "{}",
-                format!("Unable to locate {label} \"{selection}\"").red()
-            );
-            process::exit(-3);
-        }
-    } else {
-        None
-    }
-}
-
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     let args = Args::parse();
@@ -708,7 +680,12 @@ async fn main() {
     };
 
     writeln!(feedback).unwrap();
-    writeln!(feedback, "{}", String::title("Initialization").white()).unwrap();
+    let init_title = if args.validate {
+        "Initialization (Validate Only)"
+    } else {
+        "Initialization"
+    };
+    writeln!(feedback, "{}", String::title(init_title).white()).unwrap();
     writeln!(feedback).unwrap();
 
     let globals_filename = args
@@ -727,76 +704,57 @@ async fn main() {
     }
 
     let locale = SystemLocale::default().unwrap();
-    let mut workspace: Workspace;
-    let allowed_data_path;
+    let mut allowed_data_path = PathBuf::default();
 
-    if args.file == "-" {
+    let result: Result<Workspace, ApicizeError> = if args.file == "-" {
         allowed_data_path = current_exe().unwrap();
-        let global_parameters = match Parameters::open(&globals_filename, true) {
-            Ok(params) => params,
-            Err(err) => {
-                eprintln!("{}", format!("Unable to read STDIN: {}", err.error).red());
-                process::exit(-2);
-            }
-        };
+        writeln!(feedback, "{}{}", "Piping in ".white(), "STDIN".blue()).unwrap();
 
-        match open_data_stream(String::from("STDIN"), &mut stdin()) {
-            Ok(success) => {
-                match Workspace::build_workspace(
-                    success.data,
-                    Parameters::default(),
-                    global_parameters,
-                ) {
-                    Ok(opened_workspace) => {
-                        workspace = opened_workspace;
-                    }
-                    Err(err) => {
-                        eprintln!("{}", format!("Unable to read STDIN: {}", err.error).red());
-                        process::exit(-2);
-                    }
-                }
-            }
-            Err(err) => {
-                eprintln!("{}", format!("Unable to read STDIN: {}", err.error).red());
-                process::exit(-2);
-            }
-        }
-    } else {
-        let file_name = match find_workbook(PathBuf::from(&args.file), &mut feedback) {
-            Ok(f) => f,
-            Err(err) => {
-                eprintln!("{}", format!("Error: {}", &err).red());
-                std::process::exit(-1);
-            }
-        };
-
-        writeln!(
-            feedback,
-            "{}{}",
-            "Opening ".white(),
-            &file_name.to_string_lossy().blue()
+        Workspace::open(
+            None,
+            args.default_scenario,
+            args.default_authorization,
+            args.default_certificate,
+            args.default_proxy,
+            args.seed,
+            &allowed_data_path,
         )
-        .unwrap();
-
-        allowed_data_path = std::path::absolute(&file_name)
-            .unwrap()
-            .parent()
-            .unwrap()
-            .to_path_buf();
-
-        match Workspace::open(&file_name) {
-            Ok(opened_workspace) => {
-                workspace = opened_workspace;
+    } else {
+        match find_workbook(PathBuf::from(&args.file), &mut feedback) {
+            Ok(file_name) => {
+                allowed_data_path = std::path::absolute(&file_name)
+                    .unwrap()
+                    .parent()
+                    .unwrap()
+                    .to_path_buf();
+                writeln!(
+                    feedback,
+                    "{}{}",
+                    "Opening ".white(),
+                    file_name.to_string_lossy().blue()
+                )
+                .unwrap();
+                Workspace::open(
+                    Some(&file_name),
+                    args.default_scenario,
+                    args.default_authorization,
+                    args.default_certificate,
+                    args.default_proxy,
+                    args.seed,
+                    &allowed_data_path,
+                )
             }
-            Err(err) => {
-                eprintln!(
-                    "{}",
-                    format!("Unable to read {}: {}", err.file_name, err.error).red()
-                );
-                process::exit(-2);
-            }
+            Err(err) => Err(err),
         }
-    }
+    };
+
+    let workspace = match result {
+        Ok(opened_workspace) => opened_workspace,
+        Err(err) => {
+            eprintln!("{}", err.to_string().red());
+            process::exit(-2);
+        }
+    };
 
     if let Some(warnings) = workspace.defaults.get_warnings() {
         for warning in warnings {
@@ -853,250 +811,160 @@ async fn main() {
         enable_trace = false;
     }
 
-    if let Some(selection) = find_selection(
-        &args.default_scenario,
-        &workspace.scenarios.entities,
-        "scenario",
-    ) {
-        workspace.defaults.selected_scenario = Some(selection);
-    }
+    if args.validate {
+        writeln!(feedback, "{}", "Workbook file appears valid".green()).unwrap();
+    } else {
+        // let shared_workspace = Arc::new(workspace);
+        let runner = Arc::new(TestRunnerContext::new(
+            workspace,
+            None,
+            false,
+            &Some(allowed_data_path),
+            enable_trace,
+        ));
 
-    if let Some(selection) = find_selection(
-        &args.default_authorization,
-        &workspace.authorizations.entities,
-        "authorization",
-    ) {
-        workspace.defaults.selected_authorization = Some(selection);
-    }
+        let mut level = 0;
 
-    if let Some(selection) = find_selection(
-        &args.default_certificate,
-        &workspace.certificates.entities,
-        "certificate",
-    ) {
-        workspace.defaults.selected_certificate = Some(selection);
-    }
+        if args.runs == 1 {
+            writeln!(feedback).unwrap();
+            writeln!(feedback, "{}", String::title("Executing Requests").white()).unwrap();
+            writeln!(feedback).unwrap();
+        }
 
-    if let Some(selection) =
-        find_selection(&args.default_proxy, &workspace.proxies.entities, "proxy")
-    {
-        workspace.defaults.selected_certificate = Some(selection);
-    }
+        let mut grand_total_tallies = Tallies::default();
 
-    // If seed is specified, then match by ID or name
-    if let Some(seed) = args.seed {
-        if let Some(id) = workspace.data.iter().find_map(|d| {
-            if d.id == seed || d.name == seed {
-                Some(d.id.clone())
-            } else {
-                None
-            }
-        }) {
-            writeln!(feedback, "Using seed entry \"{}\"", seed.white()).unwrap();
+        for run_number in 0..args.runs {
+            let run_results = runner.run(request_ids.clone()).await;
 
-            workspace.defaults.selected_data = Some(Selection {
-                id,
-                name: "Command line seed".to_string(),
-            });
-        } else {
-            let full_seed_name = allowed_data_path.join(&seed);
-            if full_seed_name.is_file() {
+            if args.runs > 1 {
+                writeln!(feedback).unwrap();
                 writeln!(
                     feedback,
                     "{}",
-                    format!("Using seed entry \"{}\"", &seed).white()
+                    String::title(format!("Run #{}", &run_number).as_str()).white()
                 )
                 .unwrap();
+                writeln!(feedback).unwrap();
+                level += 1;
+            }
 
-                let ext = full_seed_name
-                    .extension()
-                    .unwrap_or(OsStr::new(""))
-                    .to_string_lossy()
-                    .to_ascii_lowercase();
-                let source_type = match ext.as_str() {
-                    "json" => ExternalDataSourceType::FileJSON,
-                    "csv" => ExternalDataSourceType::FileCSV,
-                    _ => {
-                        eprintln!(
-                            "{}",
-                            format!("Error: seed file \"{seed}\" does not end with .csv or .json",)
-                                .red()
-                        );
-                        std::process::exit(-1);
+            for run_result in &run_results {
+                match &run_result {
+                    Ok(result) => {
+                        let tallies = result.get_tallies();
+                        failure_count = failure_count
+                            + tallies.request_failure_count
+                            + tallies.request_error_count;
+                        grand_total_tallies.add(&tallies);
+                        render_result(result, level, &locale, &mut feedback);
                     }
-                };
+                    Err(err) => {
+                        eprintln!("{}", format!("Error: {err}").red());
+                        failure_count += 1;
+                    }
+                }
+            }
+            output_file.runs.insert(run_number, run_results);
+        }
 
-                let default_data = ExternalData {
-                    source_type,
-                    source: seed,
-                    ..Default::default()
-                };
-                workspace.data.insert(0, default_data);
+        if !send_output_to.is_empty() {
+            writeln!(feedback).unwrap();
+            let serialized = serde_json::to_string(&output_file).unwrap();
 
-                workspace.defaults.selected_data = Some(Selection {
-                    id: "\0".to_string(),
-                    name: "Command line seed".to_string(),
-                });
+            let dest: &str;
+            let result = if send_output_to == "-" {
+                dest = "STDOUT";
+                write!(stdout(), "{serialized}")
             } else {
-                eprintln!("{}", format!("Error: seed \"{seed}\" not found").red());
+                dest = send_output_to.as_str();
+                fs::write(&send_output_to, serialized)
+            };
 
-                std::process::exit(-1);
+            writeln!(feedback).unwrap();
+            match result {
+                Ok(_) => writeln!(feedback, "Test results written to {}", dest.blue()).unwrap(),
+                Err(ref err) => {
+                    panic!("Unable to write {dest} - {err}")
+                }
             }
         }
-    }
 
-    // let shared_workspace = Arc::new(workspace);
-    let runner = Arc::new(TestRunnerContext::new(
-        workspace,
-        None,
-        false,
-        &Some(allowed_data_path),
-        enable_trace,
-    ));
+        let mut report_json = args.report_json;
+        let mut report_csv = args.report_csv;
 
-    let mut level = 0;
-
-    if args.runs == 1 {
-        writeln!(feedback).unwrap();
-        writeln!(feedback, "{}", String::title("Executing Requests").white()).unwrap();
-        writeln!(feedback).unwrap();
-    }
-
-    let mut grand_total_tallies = Tallies::default();
-
-    for run_number in 0..args.runs {
-        let run_results = runner.run(request_ids.clone()).await;
-
-        if args.runs > 1 {
-            writeln!(feedback).unwrap();
+        // Map deprecated --report arguments
+        if let Some(report) = &args.report {
             writeln!(
                 feedback,
                 "{}",
-                String::title(format!("Run #{}", &run_number).as_str()).white()
+                "Warning:  --report/--format are deprecated, use --report_* arguments instead"
+                    .yellow()
             )
             .unwrap();
+            match args.format.as_str() {
+                "json" => report_json = Some(report.clone()),
+                "csv" => report_csv = Some(report.clone()),
+                _ => panic!("Invalid report format \"{}\"", args.format),
+            }
+        }
+
+        if report_json.is_some() || report_csv.is_some() {
             writeln!(feedback).unwrap();
-            level += 1;
-        }
 
-        for run_result in &run_results {
-            match &run_result {
-                Ok(result) => {
-                    let tallies = result.get_tallies();
-                    failure_count =
-                        failure_count + tallies.request_failure_count + tallies.request_error_count;
-                    grand_total_tallies.add(&tallies);
-                    render_result(result, level, &locale, &mut feedback);
-                }
-                Err(err) => {
-                    eprintln!("{}", format!("Error: {err}").red());
-                    failure_count += 1;
-                }
-            }
-        }
-        output_file.runs.insert(run_number, run_results);
-    }
-
-    if !send_output_to.is_empty() {
-        writeln!(feedback).unwrap();
-        let serialized = serde_json::to_string(&output_file).unwrap();
-
-        let dest: &str;
-        let result = if send_output_to == "-" {
-            dest = "STDOUT";
-            write!(stdout(), "{serialized}")
-        } else {
-            dest = send_output_to.as_str();
-            fs::write(&send_output_to, serialized)
-        };
-
-        writeln!(feedback).unwrap();
-        match result {
-            Ok(_) => writeln!(feedback, "Test results written to {}", dest.blue()).unwrap(),
-            Err(ref err) => {
-                panic!("Unable to write {dest} - {err}")
-            }
-        }
-    }
-
-    let mut report_json = args.report_json;
-    let mut report_csv = args.report_csv;
-    let report_zephyr = args.report_zephyr;
-
-    // Map deprecated --report arguments
-    if let Some(report) = &args.report {
-        writeln!(
-            feedback,
-            "{}",
-            "Warning:  --report/--format are deprecated, use --report_* arguments instead".yellow()
-        )
-        .unwrap();
-        match args.format.as_str() {
-            "json" => report_json = Some(report.clone()),
-            "csv" => report_csv = Some(report.clone()),
-            _ => panic!("Invalid report format \"{}\"", args.format),
-        }
-    }
-
-    if report_json.is_some() || report_csv.is_some() || report_zephyr.is_some() {
-        writeln!(feedback).unwrap();
-
-        let all_summaries = output_file
-            .runs
-            .into_iter()
-            .map(|(run_number, results)| {
-                let mut combined = Vec::<Vec<ExecutionResultSummary>>::new();
-                for result in results.into_iter().flatten() {
-                    let (summaries, _) = result.assemble_results();
-                    combined.push(summaries);
-                }
-                (run_number + 1, combined)
-            })
-            .collect::<HashMap<usize, Vec<Vec<ExecutionResultSummary>>>>();
-
-        let mut write_report = |filename: &str, format: ExecutionReportFormat| {
-            match Workspace::generate_multirun_report(&all_summaries, &format) {
-                Ok(generated_report) => match fs::write(filename, &generated_report) {
-                    Ok(_) => writeln!(
-                        feedback,
-                        "{} report written to {}",
-                        format!("{format}").white(),
-                        filename.blue()
-                    )
-                    .unwrap(),
-                    Err(ref err) => {
-                        panic!("Unable to write {format}, report to {filename} - {err}",)
+            let all_summaries = output_file
+                .runs
+                .into_iter()
+                .map(|(run_number, results)| {
+                    let mut builder = ExecutionResultBuilder::new(&runner);
+                    for result in results.into_iter().flatten() {
+                        builder.assemble(result);
                     }
-                },
-                Err(err) => {
-                    panic!("Unable to generate {format} report - {err}");
+                    let (combined, _) = builder.get_results();
+                    (run_number + 1, combined)
+                })
+                .collect::<HashMap<usize, Vec<ExecutionResultSummary>>>();
+
+            let mut write_report = |filename: &str, format: ExecutionReportFormat| {
+                match Workspace::generate_multirun_report(&all_summaries, &format) {
+                    Ok(generated_report) => match fs::write(filename, &generated_report) {
+                        Ok(_) => writeln!(
+                            feedback,
+                            "{} report written to {}",
+                            format!("{format}").white(),
+                            filename.blue()
+                        )
+                        .unwrap(),
+                        Err(ref err) => {
+                            panic!("Unable to write {format}, report to {filename} - {err}",)
+                        }
+                    },
+                    Err(err) => {
+                        panic!("Unable to generate {format} report - {err}");
+                    }
                 }
+            };
+
+            if let Some(report_filename) = report_json {
+                write_report(&report_filename, ExecutionReportFormat::JSON);
             }
-        };
 
-        if let Some(report_filename) = report_json {
-            write_report(&report_filename, ExecutionReportFormat::JSON);
+            if let Some(report_filename) = report_csv {
+                write_report(&report_filename, ExecutionReportFormat::CSV);
+            }
         }
 
-        if let Some(report_filename) = report_csv {
-            write_report(&report_filename, ExecutionReportFormat::CSV);
-        }
+        writeln!(feedback).unwrap();
+        render_tallies(
+            &grand_total_tallies,
+            "Grand Total",
+            0,
+            &locale,
+            &mut feedback,
+        );
 
-        if let Some(report_filename) = report_zephyr {
-            write_report(&report_filename, ExecutionReportFormat::ZEPHYR);
-        }
+        cleanup_v8();
     }
 
-    writeln!(feedback).unwrap();
-    render_tallies(
-        &grand_total_tallies,
-        "Grand Total",
-        0,
-        &locale,
-        &mut feedback,
-    );
-
-    cleanup_v8();
     process::exit(failure_count.try_into().unwrap_or(-1));
 }
 
