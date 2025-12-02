@@ -1,5 +1,9 @@
 # Change Log
 
+# 0.25.0
+
+* Support apicize_lib updated statndardized validations
+
 # 0.24.0
 
 * Add --validate argument

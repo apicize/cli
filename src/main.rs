@@ -4,8 +4,8 @@ use apicize_lib::{
     ApicizeGroupResultRow, ApicizeGroupResultRowContent, ApicizeGroupResultRun,
     ApicizeRequestResult, ApicizeRequestResultContent, ApicizeRequestResultRow,
     ApicizeRequestResultRun, ApicizeResult, ApicizeRunner, ApicizeTestBehavior,
-    ExecutionReportFormat, ExecutionResultBuilder, ExecutionResultSummary, Parameters, Tallies,
-    Tally, TestRunnerContext, Warnings, Workspace,
+    ExecutionReportFormat, ExecutionResultBuilder, ExecutionResultSummary, Identifiable,
+    Parameters, Tallies, Tally, TestRunnerContext, Validated, Workspace,
 };
 use clap::Parser;
 use colored::Colorize;
@@ -756,7 +756,7 @@ async fn main() {
         }
     };
 
-    if let Some(warnings) = workspace.defaults.get_warnings() {
+    if let Some(warnings) = workspace.defaults.get_validation_warnings() {
         for warning in warnings {
             writeln!(
                 feedback,
@@ -766,13 +766,35 @@ async fn main() {
             .unwrap();
         }
     }
+
+    if let Some(errors) = workspace.defaults.get_validation_errors() {
+        for (name, error) in errors {
+            writeln!(
+                feedback,
+                "{}",
+                format!("ERROR [Workbook {name}]: {error}").red()
+            )
+            .unwrap();
+        }
+    }
+
     for request in workspace.requests.entities.values() {
-        if let Some(warnings) = request.get_warnings() {
+        if let Some(warnings) = request.get_validation_warnings() {
             for warning in warnings {
                 writeln!(
                     feedback,
                     "{}",
-                    format!("WARNING [Workbook]: {warning}").yellow()
+                    format!("WARNING [{}]: {warning}", request.get_name()).yellow()
+                )
+                .unwrap();
+            }
+        }
+        if let Some(errors) = request.get_validation_errors() {
+            for (name, error) in errors {
+                writeln!(
+                    feedback,
+                    "{}",
+                    format!("ERROR [{} Workbook]: {error}", name).red()
                 )
                 .unwrap();
             }
@@ -818,6 +840,7 @@ async fn main() {
         let runner = Arc::new(TestRunnerContext::new(
             workspace,
             None,
+            "default",
             false,
             &Some(allowed_data_path),
             enable_trace,
@@ -915,17 +938,32 @@ async fn main() {
                 .runs
                 .into_iter()
                 .map(|(run_number, results)| {
-                    let mut builder = ExecutionResultBuilder::new(&runner);
-                    for result in results.into_iter().flatten() {
-                        builder.assemble(result);
-                    }
-                    let (combined, _) = builder.get_results();
-                    (run_number + 1, combined)
+                    let mut builder = ExecutionResultBuilder::default();
+                    let summaries = results
+                        .into_iter()
+                        .flatten()
+                        .flat_map(|result| {
+                            let id = result.get_id().to_string();
+                            builder.process_result(&runner, result);
+                            builder
+                                .get_summaries(id.as_str(), false)
+                                .into_values()
+                                .flatten()
+                                .cloned()
+                                .collect::<Vec<ExecutionResultSummary>>()
+                        })
+                        .collect::<Vec<ExecutionResultSummary>>();
+                    (run_number + 1, summaries)
                 })
                 .collect::<HashMap<usize, Vec<ExecutionResultSummary>>>();
 
+            let all_summaries_refs: HashMap<usize, Vec<&ExecutionResultSummary>> = all_summaries
+                .iter()
+                .map(|(k, v)| (*k, v.iter().collect()))
+                .collect();
+
             let mut write_report = |filename: &str, format: ExecutionReportFormat| {
-                match Workspace::generate_multirun_report(&all_summaries, &format) {
+                match Workspace::generate_multirun_report(&all_summaries_refs, &format) {
                     Ok(generated_report) => match fs::write(filename, &generated_report) {
                         Ok(_) => writeln!(
                             feedback,
