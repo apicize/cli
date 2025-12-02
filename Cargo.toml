@@ -6,8 +6,8 @@ authors = ["Apicize"]
 license = "MIT"
 homepage = "www.apicize.com/cli.html"
 repository = "https://github.com/apicize/Apicize.git"
-edition = "2021"
-rust-version = "1.82"
+edition = "2024"
+rust-version = "1.91"
 
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

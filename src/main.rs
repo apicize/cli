@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env::current_exe;
 use std::fs::File;
-use std::io::{stderr, stdout, Write};
+use std::io::{Write, stderr, stdout};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Arc, OnceLock};
@@ -1047,41 +1047,39 @@ impl log::Log for ReqwestLogger {
         let target = record.target();
         if target == "reqwest::connect" {
             let args = record.args().to_string();
-            if let Some(result) = self.regex_connect.captures(&args) {
-                if let Some(host) = result.get(1) {
-                    let mut out = self.output;
-                    out.write_all(
-                        format!(
-                            "{}ms [] (CONNECT) {}\n",
-                            self.start.elapsed().as_millis(),
-                            host.as_str()
-                        )
-                        .as_bytes(),
+            if let Some(result) = self.regex_connect.captures(&args)
+                && let Some(host) = result.get(1)
+            {
+                let mut out = self.output;
+                out.write_all(
+                    format!(
+                        "{}ms [] (CONNECT) {}\n",
+                        self.start.elapsed().as_millis(),
+                        host.as_str()
                     )
-                    .unwrap();
-                }
+                    .as_bytes(),
+                )
+                .unwrap();
             }
         } else if target == "reqwest::connect::verbose" {
             let args = record.args().to_string();
-            if let Some(result) = self.regex_readwrite.captures(&args) {
-                if let Some(request_id) = result.get(1) {
-                    if let Some(operation) = result.get(2) {
-                        if let Some(data) = result.get(3) {
-                            let mut out = self.output;
-                            out.write_all(
-                                format!(
-                                    "{}ms [{}] ({}) {}\n",
-                                    self.start.elapsed().as_millis(),
-                                    request_id.as_str(),
-                                    operation.as_str().to_uppercase(),
-                                    data.as_str(),
-                                )
-                                .as_bytes(),
-                            )
-                            .unwrap();
-                        }
-                    }
-                }
+            if let Some(result) = self.regex_readwrite.captures(&args)
+                && let Some(request_id) = result.get(1)
+                && let Some(operation) = result.get(2)
+                && let Some(data) = result.get(3)
+            {
+                let mut out = self.output;
+                out.write_all(
+                    format!(
+                        "{}ms [{}] ({}) {}\n",
+                        self.start.elapsed().as_millis(),
+                        request_id.as_str(),
+                        operation.as_str().to_uppercase(),
+                        data.as_str(),
+                    )
+                    .as_bytes(),
+                )
+                .unwrap();
             }
         }
     }
