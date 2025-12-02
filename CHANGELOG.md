@@ -3,6 +3,7 @@
 # 0.25.0
 
 * Support apicize_lib updated statndardized validations
+* Remove Microsoft Trusted Signature since they stopped individual developer support
 
 # 0.24.0
 
