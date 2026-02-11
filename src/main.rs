@@ -10,6 +10,7 @@ use apicize_lib::{
 use clap::Parser;
 use colored::Colorize;
 use dirs::{config_dir, document_dir};
+use indexmap::IndexMap;
 use log::{Metadata, Record};
 use num_format::{SystemLocale, ToFormattedString};
 use regex::Regex;
@@ -939,31 +940,30 @@ async fn main() {
                 .into_iter()
                 .map(|(run_number, results)| {
                     let mut builder = ExecutionResultBuilder::default();
-                    let summaries = results
+                    let summaries: IndexMap<usize, ExecutionResultSummary> = results
                         .into_iter()
                         .flatten()
                         .flat_map(|result| {
                             let id = result.get_id().to_string();
                             builder.process_result(&runner, result);
-                            builder
-                                .get_summaries(id.as_str(), false)
+                            let summaries: IndexMap<usize, ExecutionResultSummary> = builder
+                                .get_summaries(&id, true)
                                 .into_values()
-                                .flatten()
-                                .cloned()
-                                .collect::<Vec<ExecutionResultSummary>>()
+                                .flat_map(|summaries| {
+                                    summaries
+                                        .into_iter()
+                                        .map(|summary| (summary.exec_ctr, summary.clone()))
+                                })
+                                .collect();
+                            summaries
                         })
-                        .collect::<Vec<ExecutionResultSummary>>();
+                        .collect();
                     (run_number + 1, summaries)
                 })
-                .collect::<HashMap<usize, Vec<ExecutionResultSummary>>>();
-
-            let all_summaries_refs: HashMap<usize, Vec<&ExecutionResultSummary>> = all_summaries
-                .iter()
-                .map(|(k, v)| (*k, v.iter().collect()))
-                .collect();
+                .collect::<IndexMap<usize, IndexMap<usize, ExecutionResultSummary>>>();
 
             let mut write_report = |filename: &str, format: ExecutionReportFormat| {
-                match Workspace::generate_multirun_report(&all_summaries_refs, &format) {
+                match Workspace::generate_multirun_report(&all_summaries, &format) {
                     Ok(generated_report) => match fs::write(filename, &generated_report) {
                         Ok(_) => writeln!(
                             feedback,

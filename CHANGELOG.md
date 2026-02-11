@@ -1,5 +1,9 @@
 # Change Log
 
+# 0.26.0
+
+* Fix PATCH calls
+
 # 0.25.0
 
 * Support apicize_lib updated statndardized validations
