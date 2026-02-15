@@ -410,6 +410,7 @@ fn render_group_runs(
         render_group_run(run, run_count, level + 1, locale, feedback);
     }
 }
+
 fn render_group_run(
     run: &ApicizeGroupResultRun,
     run_count: usize,
@@ -450,6 +451,7 @@ fn render_request_runs(
         render_request_run(run, run_count, level + 1, feedback);
     }
 }
+
 fn render_request_run(
     run: &ApicizeRequestResultRun,
     run_count: usize,

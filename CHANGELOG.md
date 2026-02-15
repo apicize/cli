@@ -1,5 +1,9 @@
 # Change Log
 
+# 0.27.0
+
+* Performance optimizations
+
 # 0.26.0
 
 * Fix PATCH calls
