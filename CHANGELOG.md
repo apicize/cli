@@ -1,5 +1,9 @@
 # Change Log
 
+# 0.28.0
+
+* Add disabled flag to requests/groups
+
 # 0.27.0
 
 * Performance optimizations
