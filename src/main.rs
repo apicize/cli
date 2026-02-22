@@ -262,6 +262,13 @@ fn render_group(
     )
     .unwrap();
 
+    if let Some(logs) = &group.logs {
+        let prefix1 = format!("{:width$}", "", width = (level + 1) * 3);
+        for log in logs {
+            writeln!(feedback, "{}{}", prefix1, log.white().dimmed()).unwrap();
+        }
+    }
+
     match &group.content {
         ApicizeGroupResultContent::Rows { rows } => {
             render_group_rows(rows, level, locale, feedback)
@@ -294,6 +301,13 @@ fn render_request(
         .white()
     )
     .unwrap();
+
+    if let Some(logs) = &request.logs {
+        let prefix1 = format!("{:width$}", "", width = (level + 1) * 3);
+        for log in logs {
+            writeln!(feedback, "{}{}", prefix1, log.white().dimmed()).unwrap();
+        }
+    }
 
     match &request.content {
         ApicizeRequestResultContent::Rows { rows } => render_request_rows(rows, level, feedback),
