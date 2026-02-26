@@ -954,27 +954,18 @@ async fn main() {
             let all_summaries = output_file
                 .runs
                 .into_iter()
-                .map(|(run_number, results)| {
+                .flat_map(|(run_number, results)| {
                     let mut builder = ExecutionResultBuilder::default();
-                    let summaries: IndexMap<usize, ExecutionResultSummary> = results
-                        .into_iter()
-                        .flatten()
-                        .flat_map(|result| {
-                            let id = result.get_id().to_string();
-                            builder.process_result(&runner, result);
-                            let summaries: IndexMap<usize, ExecutionResultSummary> = builder
-                                .get_summaries(&id, true)
-                                .into_values()
-                                .flat_map(|summaries| {
-                                    summaries
-                                        .into_iter()
-                                        .map(|summary| (summary.exec_ctr, summary.clone()))
-                                })
-                                .collect();
-                            summaries
-                        })
-                        .collect();
-                    (run_number + 1, summaries)
+                    for result in results {
+                        match result {
+                            Ok(result) => {
+                                builder.process_result(&runner, result);
+                            }
+                            Err(err) => return Err(err),
+                        }
+                    }
+                    let summaries = builder.get_result_summaries(&1);
+                    Ok((run_number + 1, summaries))
                 })
                 .collect::<IndexMap<usize, IndexMap<usize, ExecutionResultSummary>>>();
 

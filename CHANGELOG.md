@@ -1,5 +1,9 @@
 # Change Log
 
+# 0.29.2
+
+* Fix CSV output
+
 # 0.29.1
 
 * Performance optimizatino
