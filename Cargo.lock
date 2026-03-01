@@ -104,9 +104,9 @@ dependencies = [
 
 [[package]]
 name = "apicize_lib"
-version = "0.34.0"
+version = "0.34.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "187c6a680c40761a9565d4e0f3c66d0b79fee0f0bc507f702d97362c9c9c7c46"
+checksum = "3564dcb8dd880bf6b82aa063e739a752d12fb918a6cf6ac56a0a32737343f482"
 dependencies = [
  "async-recursion",
  "async-trait",
@@ -1307,9 +1307,9 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "libredox"
-version = "0.1.13"
+version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "062b52cd41eb8d929e81b592a47df833c33c15684933a9329440137a6d9f134c"
+checksum = "1744e39d1d6a9948f4f388969627434e31128196de472883b39f148769bfe30a"
 dependencies = [
  "libc",
 ]
