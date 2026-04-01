@@ -1,5 +1,10 @@
 # Change Log
 
+# 0.32.0
+
+* Add password support
+* Fix report rendering on request errors
+
 # 0.31.1
 
 * Include child exec ctrs for multi-run requests

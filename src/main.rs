@@ -3,9 +3,9 @@ use apicize_lib::{
     ApicizeError, ApicizeExecution, ApicizeGroupResult, ApicizeGroupResultContent,
     ApicizeGroupResultRow, ApicizeGroupResultRowContent, ApicizeGroupResultRun,
     ApicizeRequestResult, ApicizeRequestResultContent, ApicizeRequestResultRow,
-    ApicizeRequestResultRun, ApicizeResult, ApicizeRunner, ApicizeTestBehavior,
+    ApicizeRequestResultRun, ApicizeResult, ApicizeRunner, ApicizeTestBehavior, Disabled,
     ExecutionReportFormat, ExecutionResultBuilder, ExecutionResultSummary, Identifiable,
-    Parameters, Tallies, Tally, TestRunnerContext, Validated, Workspace,
+    OpenWorkbookOptions, Parameters, Tallies, Tally, TestRunnerContext, Validated, Workspace,
 };
 use clap::Parser;
 use colored::Colorize;
@@ -54,9 +54,9 @@ struct Args {
     /// Global parameter file name (overriding default location, if available)
     #[arg(short, long)]
     globals: Option<String>,
-    /// Name of seed entry, or relative path to seed file from input stream
+    /// Name of data set entry, or relative path to seed file from input stream
     #[arg(short, long)]
-    seed: Option<String>,
+    data: Option<String>,
     /// Default certificate (ID or name) to use for requests
     #[arg(long)]
     default_scenario: Option<String>,
@@ -78,6 +78,12 @@ struct Args {
     /// Print configuration information
     #[arg(long, default_value_t = false)]
     info: bool,
+    /// Password for Workbook private parameter file
+    #[arg(long)]
+    private_password: Option<String>,
+    /// Password for Vault global  parameter file
+    #[arg(long)]
+    vault_password: Option<String>,
 }
 
 trait NumericFormat {
@@ -515,7 +521,7 @@ fn render_execution(execution: &ApicizeExecution, level: usize, feedback: &mut B
             writeln!(
                 feedback,
                 "{}{}",
-                &String::prefix(level + 2),
+                &String::prefix(level + 1),
                 err.to_string().red()
             )
             .unwrap();
@@ -729,12 +735,16 @@ async fn main() {
 
         Workspace::open(
             None,
-            args.default_scenario,
-            args.default_authorization,
-            args.default_certificate,
-            args.default_proxy,
-            args.seed,
             &allowed_data_path,
+            OpenWorkbookOptions {
+                override_default_scenario: args.default_scenario,
+                override_default_authorization: args.default_authorization,
+                override_default_certificate: args.default_certificate,
+                override_default_proxy: args.default_proxy,
+                override_data_seed: args.data,
+                private_password: args.private_password,
+                vault_password: args.vault_password,
+            },
         )
     } else {
         match find_workbook(PathBuf::from(&args.file), &mut feedback) {
@@ -753,12 +763,16 @@ async fn main() {
                 .unwrap();
                 Workspace::open(
                     Some(&file_name),
-                    args.default_scenario,
-                    args.default_authorization,
-                    args.default_certificate,
-                    args.default_proxy,
-                    args.seed,
                     &allowed_data_path,
+                    OpenWorkbookOptions {
+                        override_default_scenario: args.default_scenario,
+                        override_default_authorization: args.default_authorization,
+                        override_default_certificate: args.default_certificate,
+                        override_default_proxy: args.default_proxy,
+                        override_data_seed: args.data,
+                        private_password: args.private_password,
+                        vault_password: args.vault_password,
+                    },
                 )
             }
             Err(err) => Err(err),
@@ -828,7 +842,22 @@ async fn main() {
         .unwrap();
     }
 
-    let request_ids = workspace.requests.top_level_ids.to_owned();
+    let request_ids = workspace
+        .requests
+        .top_level_ids
+        .iter()
+        .filter_map(|id| match workspace.requests.entities.get(id.as_str()) {
+            Some(r) => {
+                if r.get_disabled() {
+                    None
+                } else {
+                    Some(id.to_string())
+                }
+            }
+            None => None,
+        })
+        .collect::<Vec<String>>();
+
     let mut output_file = OutputFile {
         runs: HashMap::new(),
     };
@@ -861,6 +890,7 @@ async fn main() {
             false,
             &Some(allowed_data_path),
             enable_trace,
+            false,
         ));
 
         let mut level = 0;
@@ -951,26 +981,34 @@ async fn main() {
         if report_json.is_some() || report_csv.is_some() {
             writeln!(feedback).unwrap();
 
-            let all_summaries = output_file
+            let all_run_summaries = output_file
                 .runs
                 .into_iter()
                 .flat_map(|(run_number, results)| {
-                    let mut builder = ExecutionResultBuilder::default();
+                    let mut combined_summaries = IndexMap::<usize, ExecutionResultSummary>::new();
+                    let mut top_level_exec_ctrs = Vec::<usize>::new();
+                    let mut exec_ctr = 1;
+
                     for result in results {
                         match result {
                             Ok(result) => {
+                                top_level_exec_ctrs.push(exec_ctr);
+                                let mut builder = ExecutionResultBuilder::with_exec_ctr(exec_ctr);
                                 builder.process_result(&runner, result);
+                                let summaries = builder.get_result_summaries(&exec_ctr);
+                                exec_ctr = summaries.keys().copied().max().unwrap_or(0) + 1;
+                                combined_summaries.extend(summaries);
                             }
                             Err(err) => return Err(err),
                         }
                     }
-                    let summaries = builder.get_result_summaries(&1);
-                    Ok((run_number + 1, summaries))
+                    Ok((run_number + 1, (top_level_exec_ctrs, combined_summaries)))
                 })
-                .collect::<IndexMap<usize, IndexMap<usize, ExecutionResultSummary>>>();
+                .collect::<IndexMap<usize, (Vec<usize>, IndexMap<usize, ExecutionResultSummary>)>>(
+                );
 
             let mut write_report = |filename: &str, format: ExecutionReportFormat| {
-                match Workspace::generate_multirun_report(&all_summaries, &format) {
+                match Workspace::generate_multirun_report(&all_run_summaries, &format) {
                     Ok(generated_report) => match fs::write(filename, &generated_report) {
                         Ok(_) => writeln!(
                             feedback,
