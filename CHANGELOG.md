@@ -1,5 +1,9 @@
 # Change Log
 
+# 0.33.0
+
+* Added MacOS support
+
 # 0.32.0
 
 * Add password support
