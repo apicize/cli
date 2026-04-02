@@ -51,7 +51,7 @@ struct Args {
     /// Name of the output file name for tracing HTTP traffic
     #[arg(short, long)]
     trace: Option<String>,
-    /// Global parameter file name (overriding default location, if available)
+    /// Global parameter ("vault") file name (overriding default location, if available)
     #[arg(short, long)]
     globals: Option<String>,
     /// Name of data set entry, or relative path to seed file from input stream
@@ -69,6 +69,12 @@ struct Args {
     /// Default proxy (ID or name) to use for requests
     #[arg(long)]
     default_proxy: Option<String>,
+    /// Password for Workbook private parameter file
+    #[arg(long)]
+    private_password: Option<String>,
+    /// Password for Vault global  parameter file
+    #[arg(long)]
+    vault_password: Option<String>,
     /// If set, the script and arguments will be validated but tests will not be run
     #[arg(long, default_value_t = false)]
     validate: bool,
@@ -78,12 +84,6 @@ struct Args {
     /// Print configuration information
     #[arg(long, default_value_t = false)]
     info: bool,
-    /// Password for Workbook private parameter file
-    #[arg(long)]
-    private_password: Option<String>,
-    /// Password for Vault global  parameter file
-    #[arg(long)]
-    vault_password: Option<String>,
 }
 
 trait NumericFormat {
