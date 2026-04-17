@@ -1,5 +1,10 @@
 # Change Log
 
+# 0.34.0
+
+* Added --filter argument
+* Removed deprecated --report and --format arguments
+
 # 0.33.0
 
 * Added MacOS support

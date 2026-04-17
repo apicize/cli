@@ -24,6 +24,8 @@ Upon execution, it will return the following values:
   Number of times to run workbook (runs are sequential) [default: 1]
 * `-o`, `--output <OUTPUT>` \
   Name of the output file name for test results (or - to write to STDOUT)
+* `--filter <CRITERIA>` \
+  Limits requests/groups to those with ID or name that exactly match CRITERIA, or fuzzy match name and are not disabled
 * `--report-json <REPORT_JSON>` \
   File name for JSON report
 * `--report-csv <REPORT_CSV>` \

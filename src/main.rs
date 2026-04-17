@@ -5,7 +5,8 @@ use apicize_lib::{
     ApicizeRequestResult, ApicizeRequestResultContent, ApicizeRequestResultRow,
     ApicizeRequestResultRun, ApicizeResult, ApicizeRunner, ApicizeTestBehavior, Disabled,
     ExecutionReportFormat, ExecutionResultBuilder, ExecutionResultSummary, Identifiable,
-    OpenWorkbookOptions, Parameters, Tallies, Tally, TestRunnerContext, Validated, Workspace,
+    OpenWorkbookOptions, Parameters, Tallies, Tally, TestRunnerContext, TestRunnerContextInit,
+    Validated, Workspace,
 };
 use clap::Parser;
 use colored::Colorize;
@@ -33,6 +34,9 @@ struct Args {
     /// Number of times to run workbook (runs are sequential)
     #[arg(long, default_value_t = 1)]
     runs: usize,
+    /// Filter to select specific requests or groups by ID or name
+    #[arg(short, long)]
+    filter: Option<String>,
     /// Name of the output file name for test results (or - to write to STDOUT)
     #[arg(short, long)]
     output: Option<String>,
@@ -42,12 +46,12 @@ struct Args {
     /// File name for CSV report
     #[arg(long)]
     report_csv: Option<String>,
-    /// Name of the report file name (DEPRECATED - use report_* arguments instead)
-    #[arg(short, long)]
-    report: Option<String>,
-    /// Format of output file (DEPRECATED - use report_* arguments instead)
-    #[arg(short, long, default_value("json"), value_parser(["csv","json"]))]
-    format: String,
+    // /// Name of the report file name (DEPRECATED - use report_* arguments instead)
+    // #[arg(short, long)]
+    // report: Option<String>,
+    // /// Format of output file (DEPRECATED - use report_* arguments instead)
+    // #[arg(short, long, default_value("json"), value_parser(["csv","json"]))]
+    // format: String,
     /// Name of the output file name for tracing HTTP traffic
     #[arg(short, long)]
     trace: Option<String>,
@@ -124,6 +128,98 @@ impl FormatHelper for String {
         };
         format!("{:-^1$}", t, 40)
     }
+}
+
+/// Recursively list available entities with hierarchy and disabled status
+fn list_available_entities(
+    entity_ids: &[String],
+    entities: &HashMap<String, apicize_lib::RequestEntry>,
+    child_ids: &HashMap<String, Vec<String>>,
+    level: usize,
+    feedback: &mut Box<dyn Write>,
+) {
+    for id in entity_ids {
+        if let Some(entity) = entities.get(id) {
+            let entity_type = match entity {
+                apicize_lib::RequestEntry::Request(_) => "Request",
+                apicize_lib::RequestEntry::Group(_) => "Group",
+            };
+            let disabled_marker = if entity.get_disabled() {
+                format!(" {}", "[Disabled]".yellow())
+            } else {
+                String::new()
+            };
+            writeln!(
+                feedback,
+                "{}{} ({} ID {}){}",
+                String::prefix(level),
+                entity.get_name().blue(),
+                entity_type,
+                entity.get_id().green(),
+                disabled_marker
+            )
+            .unwrap();
+
+            // Recursively list children
+            if let Some(children) = child_ids.get(id) {
+                list_available_entities(children, entities, child_ids, level + 1, feedback);
+            }
+        }
+    }
+}
+
+/// Filter entities based on exact ID match, exact name match, or fuzzy name match
+/// Returns (exact_match_ids, fuzzy_match_ids)
+fn filter_entities(
+    filter: &str,
+    entities: &HashMap<String, apicize_lib::RequestEntry>,
+    feedback: &mut Box<dyn Write>,
+) -> (Vec<String>, Vec<String>) {
+    let filter_lower = filter.to_lowercase();
+    let mut exact_match_ids = Vec::new();
+    let mut fuzzy_match_ids = Vec::new();
+
+    for (id, entity) in entities.iter() {
+        let is_exact_match = entity.get_id() == filter || entity.get_name() == filter;
+        let is_fuzzy_match =
+            !is_exact_match && entity.get_name().to_lowercase().contains(&filter_lower);
+
+        if is_exact_match {
+            exact_match_ids.push(id.to_string());
+
+            let entity_type = match entity {
+                apicize_lib::RequestEntry::Request(_) => "Request",
+                apicize_lib::RequestEntry::Group(_) => "Group",
+            };
+            writeln!(
+                feedback,
+                "{}{} ({} ID {})",
+                "Exact match: ".white(),
+                entity.get_name().blue(),
+                entity_type,
+                entity.get_id().green()
+            )
+            .unwrap();
+        } else if is_fuzzy_match {
+            fuzzy_match_ids.push(id.to_string());
+
+            let entity_type = match entity {
+                apicize_lib::RequestEntry::Request(_) => "Request",
+                apicize_lib::RequestEntry::Group(_) => "Group",
+            };
+            writeln!(
+                feedback,
+                "{}{} ({} ID {})",
+                "Fuzzy match: ".white(),
+                entity.get_name().blue(),
+                entity_type,
+                entity.get_id().green()
+            )
+            .unwrap();
+        }
+    }
+
+    (exact_match_ids, fuzzy_match_ids)
 }
 
 /// Search for workbook with the given file name, looking at configured and default workbook
@@ -842,21 +938,75 @@ async fn main() {
         .unwrap();
     }
 
-    let request_ids = workspace
-        .requests
-        .top_level_ids
-        .iter()
-        .filter_map(|id| match workspace.requests.entities.get(id.as_str()) {
-            Some(r) => {
-                if r.get_disabled() {
-                    None
-                } else {
-                    Some(id.to_string())
-                }
+    let request_ids = if let Some(filter) = &args.filter {
+        // Filter mode: match by ID or name
+        writeln!(feedback).unwrap();
+        writeln!(
+            feedback,
+            "{}",
+            format!("Filtering with: \"{}\"", filter).white()
+        )
+        .unwrap();
+
+        let (exact_match_ids, fuzzy_match_ids) =
+            filter_entities(filter, &workspace.requests.entities, &mut feedback);
+
+        // Handle no matches case
+        if exact_match_ids.is_empty() && fuzzy_match_ids.is_empty() {
+            writeln!(
+                feedback,
+                "{}",
+                format!("ERROR: No requests or groups match filter \"{}\"", filter).red()
+            )
+            .unwrap();
+            writeln!(feedback).unwrap();
+            writeln!(feedback, "{}", "Available requests and groups:".yellow()).unwrap();
+
+            list_available_entities(
+                &workspace.requests.top_level_ids,
+                &workspace.requests.entities,
+                &workspace.requests.child_ids,
+                0,
+                &mut feedback,
+            );
+
+            process::exit(-3);
+        }
+
+        // writeln!(feedback).unwrap();
+
+        // Combine results:
+        // - Exact matches: include all (bypass disabled status)
+        // - Fuzzy matches: filter out disabled entries
+        let mut result_ids = exact_match_ids; // All exact matches included
+
+        for id in fuzzy_match_ids {
+            if let Some(entity) = workspace.requests.entities.get(&id)
+                && !entity.get_disabled()
+            {
+                result_ids.push(id);
             }
-            None => None,
-        })
-        .collect::<Vec<String>>();
+        }
+
+        result_ids
+    } else {
+        // No filter: use existing behavior (top-level, non-disabled only)
+        workspace
+            .requests
+            .top_level_ids
+            .iter()
+            .filter_map(|id| match workspace.requests.entities.get(id.as_str()) {
+                Some(r) => {
+                    if r.get_disabled() {
+                        None
+                    } else {
+                        Some(id.to_string())
+                    }
+                }
+                None => None,
+            })
+            .collect::<Vec<String>>()
+    };
 
     let mut output_file = OutputFile {
         runs: HashMap::new(),
@@ -883,15 +1033,16 @@ async fn main() {
         writeln!(feedback, "{}", "Workbook file appears valid".green()).unwrap();
     } else {
         // let shared_workspace = Arc::new(workspace);
-        let runner = Arc::new(TestRunnerContext::new(
+        let runner = Arc::new(TestRunnerContext::new(TestRunnerContextInit {
             workspace,
-            None,
-            "default",
-            false,
-            &Some(allowed_data_path),
+            cancellation: None,
+            executing_request_or_group_id: "default",
+            single_run_no_timeout: false,
+            allowed_data_path: &Some(allowed_data_path),
             enable_trace,
-            false,
-        ));
+            generate_curl: false,
+            execution_counter_callback: None,
+        }));
 
         let mut level = 0;
 
@@ -959,26 +1110,7 @@ async fn main() {
             }
         }
 
-        let mut report_json = args.report_json;
-        let mut report_csv = args.report_csv;
-
-        // Map deprecated --report arguments
-        if let Some(report) = &args.report {
-            writeln!(
-                feedback,
-                "{}",
-                "Warning:  --report/--format are deprecated, use --report_* arguments instead"
-                    .yellow()
-            )
-            .unwrap();
-            match args.format.as_str() {
-                "json" => report_json = Some(report.clone()),
-                "csv" => report_csv = Some(report.clone()),
-                _ => panic!("Invalid report format \"{}\"", args.format),
-            }
-        }
-
-        if report_json.is_some() || report_csv.is_some() {
+        if args.report_json.is_some() || args.report_csv.is_some() {
             writeln!(feedback).unwrap();
 
             let all_run_summaries = output_file
@@ -987,21 +1119,23 @@ async fn main() {
                 .flat_map(|(run_number, results)| {
                     let mut combined_summaries = IndexMap::<usize, ExecutionResultSummary>::new();
                     let mut top_level_exec_ctrs = Vec::<usize>::new();
-                    let mut exec_ctr = 1;
+                    let mut exec_ctr = 0;
 
                     for result in results {
                         match result {
                             Ok(result) => {
-                                top_level_exec_ctrs.push(exec_ctr);
                                 let mut builder = ExecutionResultBuilder::with_exec_ctr(exec_ctr);
                                 builder.process_result(&runner, result);
-                                let summaries = builder.get_result_summaries(&exec_ctr);
+                                let top_level_exec_ctr = exec_ctr + 1;
+                                let summaries = builder.get_result_summaries(&top_level_exec_ctr);
+                                top_level_exec_ctrs.push(top_level_exec_ctr);
                                 exec_ctr = summaries.keys().copied().max().unwrap_or(0) + 1;
                                 combined_summaries.extend(summaries);
                             }
                             Err(err) => return Err(err),
                         }
                     }
+
                     Ok((run_number + 1, (top_level_exec_ctrs, combined_summaries)))
                 })
                 .collect::<IndexMap<usize, (Vec<usize>, IndexMap<usize, ExecutionResultSummary>)>>(
@@ -1027,11 +1161,11 @@ async fn main() {
                 }
             };
 
-            if let Some(report_filename) = report_json {
+            if let Some(report_filename) = args.report_json {
                 write_report(&report_filename, ExecutionReportFormat::JSON);
             }
 
-            if let Some(report_filename) = report_csv {
+            if let Some(report_filename) = args.report_csv {
                 write_report(&report_filename, ExecutionReportFormat::CSV);
             }
         }
