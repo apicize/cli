@@ -4,9 +4,9 @@ use apicize_lib::{
     ApicizeGroupResultRow, ApicizeGroupResultRowContent, ApicizeGroupResultRun,
     ApicizeRequestResult, ApicizeRequestResultContent, ApicizeRequestResultRow,
     ApicizeRequestResultRun, ApicizeResult, ApicizeRunner, ApicizeTestBehavior, Disabled,
-    ExecutionReportFormat, ExecutionResultBuilder, ExecutionResultSummary, Identifiable,
-    OpenWorkbookOptions, Parameters, Tallies, Tally, TestRunnerContext, TestRunnerContextInit,
-    Validated, Workspace,
+    ExecutionProgress, ExecutionReportFormat, ExecutionResultBuilder, ExecutionResultSummary,
+    Identifiable, OpenWorkbookOptions, Parameters, Tallies, Tally, TestRunnerContext,
+    TestRunnerContextInit, Validated, Workspace,
 };
 use clap::Parser;
 use colored::Colorize;
@@ -1032,7 +1032,52 @@ async fn main() {
     if args.validate {
         writeln!(feedback, "{}", "Workbook file appears valid".green()).unwrap();
     } else {
-        // let shared_workspace = Arc::new(workspace);
+        let use_color = colored::control::SHOULD_COLORIZE.should_colorize();
+        let feedback_to_stderr = send_output_to == "-";
+        let name_map: Arc<HashMap<String, String>> = Arc::new(
+            workspace
+                .requests
+                .entities
+                .iter()
+                .map(|(id, entry)| (id.clone(), entry.get_name().to_string()))
+                .collect(),
+        );
+        let name_map_cb = Arc::clone(&name_map);
+        let execution_callback: Box<dyn Fn(&ExecutionProgress) + Send + Sync> =
+            Box::new(move |progress| {
+                let mut out: Box<dyn Write> = if feedback_to_stderr {
+                    Box::new(stderr())
+                } else {
+                    Box::new(stdout())
+                };
+                if progress.exec_ctr == 1 {
+                    if let Some(name) = name_map_cb.get(&progress.id) {
+                        let suffix = match (progress.row_number, progress.run_number) {
+                            (Some(row), Some(run)) => format!(" (Row {row}, Run {run})"),
+                            (Some(row), None) => format!(" (Row {row})"),
+                            (None, Some(run)) => format!(" (Run {run})"),
+                            (None, None) => String::new(),
+                        };
+                        if use_color {
+                            let _ = write!(
+                                out,
+                                "\r\x1b[2K{}",
+                                format!("Running {name}{suffix}...").cyan()
+                            );
+                            let _ = out.flush();
+                        } else {
+                            let _ = writeln!(out, "Running {name}{suffix}...");
+                        }
+                    }
+                } else if progress.row_number.is_none()
+                    && progress.run_number.is_none()
+                    && use_color
+                {
+                    let _ = write!(out, "\r\x1b[2K");
+                    let _ = out.flush();
+                }
+            });
+
         let runner = Arc::new(TestRunnerContext::new(TestRunnerContextInit {
             workspace,
             cancellation: None,
@@ -1041,7 +1086,7 @@ async fn main() {
             allowed_data_path: &Some(allowed_data_path),
             enable_trace,
             generate_curl: false,
-            execution_counter_callback: None,
+            execution_counter_callback: Some(execution_callback),
         }));
 
         let mut level = 0;
