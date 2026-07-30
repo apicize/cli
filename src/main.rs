@@ -1085,7 +1085,6 @@ async fn main() {
             single_run_no_timeout: false,
             allowed_data_path: &Some(allowed_data_path),
             enable_trace,
-            generate_curl: false,
             execution_counter_callback: Some(execution_callback),
         }));
 

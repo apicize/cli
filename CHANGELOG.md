@@ -1,5 +1,10 @@
 # Change Log
 
+## 0.36.0
+
+* Remove CURL generation support
+* Fix issue with test scripts lacking ending CR
+
 ## 0.35.0
 
 * Support insertion of non-string data in JSON body payloads
