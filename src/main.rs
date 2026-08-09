@@ -356,7 +356,7 @@ fn render_group(
         format!(
             "{}{} ({} - {})",
             String::prefix(level),
-            &group.name,
+            group.name,
             group.executed_at.to_min_sec_string(locale),
             group.duration.to_ms_string(locale)
         )
@@ -396,7 +396,7 @@ fn render_request(
         format!(
             "{}{} ({} - {})",
             String::prefix(level),
-            &request.name,
+            request.name,
             request.executed_at.to_min_sec_string(locale),
             request.duration.to_ms_string(locale)
         )
@@ -444,7 +444,7 @@ fn render_group_row(
     writeln!(
         feedback,
         "{}",
-        format!("{}Row {} of {}", &prefix, row.row_number, &row_count).white()
+        format!("{}Row {} of {}", prefix, row.row_number, row_count).white()
     )
     .unwrap();
 
@@ -493,7 +493,7 @@ fn render_request_row(
     writeln!(
         feedback,
         "{}",
-        format!("{} Row {} of {}", &prefix, row.row_number, &row_count).white()
+        format!("{} Row {} of {}", prefix, row.row_number, row_count).white()
     )
     .unwrap();
 
@@ -538,7 +538,7 @@ fn render_group_run(
     writeln!(
         feedback,
         "{}",
-        format!("{}Run {} of {}", &prefix, run.run_number, &run_count).white()
+        format!("{}Run {} of {}", prefix, run.run_number, run_count).white()
     )
     .unwrap();
 
@@ -579,7 +579,7 @@ fn render_request_run(
     writeln!(
         feedback,
         "{}",
-        format!("{} Run {} of {}", &prefix, run.run_number, &run_count).white()
+        format!("{} Run {} of {}", prefix, run.run_number, run_count).white()
     )
     .unwrap();
 
@@ -606,7 +606,7 @@ fn render_execution(execution: &ApicizeExecution, level: usize, feedback: &mut B
         writeln!(
             feedback,
             "{}{}{}",
-            &String::prefix(level + 1),
+            String::prefix(level + 1),
             method.cyan(),
             url.cyan(),
         )
@@ -617,7 +617,7 @@ fn render_execution(execution: &ApicizeExecution, level: usize, feedback: &mut B
             writeln!(
                 feedback,
                 "{}{}",
-                &String::prefix(level + 1),
+                String::prefix(level + 1),
                 err.to_string().red()
             )
             .unwrap();
@@ -649,7 +649,7 @@ fn render_behavior(
     writeln!(
         feedback,
         "{}{}{} {}",
-        &prefix,
+        prefix,
         full_name.bright_blue(),
         tag.white(),
         // if behavior.error.is_some() {
@@ -698,12 +698,12 @@ fn render_tallies(
     feedback: &mut Box<dyn Write>,
 ) {
     let prefix = String::prefix(level);
-    writeln!(feedback, "{}{}", &prefix, String::title(title).white()).unwrap();
+    writeln!(feedback, "{}{}", prefix, String::title(title).white()).unwrap();
 
     writeln!(
         feedback,
         "{}{}{}",
-        &prefix,
+        prefix,
         "Successful Requests: ".white(),
         if tallies.request_success_count > 0 {
             tallies
@@ -719,7 +719,7 @@ fn render_tallies(
     writeln!(
         feedback,
         "{}{}{}",
-        &prefix,
+        prefix,
         "Failed Requests: ".white(),
         if tallies.request_failure_count > 0 {
             tallies
@@ -735,7 +735,7 @@ fn render_tallies(
     writeln!(
         feedback,
         "{}{}{}",
-        &prefix,
+        prefix,
         "Errors: ".white(),
         if tallies.request_error_count > 0 {
             tallies
@@ -751,7 +751,7 @@ fn render_tallies(
     writeln!(
         feedback,
         "{}{}{}",
-        &prefix,
+        prefix,
         "Passed Tests: ".white(),
         if tallies.test_pass_count > 0 {
             tallies.test_pass_count.to_formatted_string(locale).green()
@@ -764,7 +764,7 @@ fn render_tallies(
     writeln!(
         feedback,
         "{}{}{}",
-        &prefix,
+        prefix,
         "Failed Tests: ".white(),
         if tallies.test_fail_count > 0 {
             tallies.test_fail_count.to_formatted_string(locale).yellow()
@@ -774,7 +774,7 @@ fn render_tallies(
     )
     .unwrap();
 
-    writeln!(feedback, "{}{}", &prefix, String::title("").white()).unwrap();
+    writeln!(feedback, "{}{}", prefix, String::title("").white()).unwrap();
 }
 
 static LOGGER: OnceLock<ReqwestLogger> = OnceLock::new();
@@ -1106,7 +1106,7 @@ async fn main() {
                 writeln!(
                     feedback,
                     "{}",
-                    String::title(format!("Run #{}", &run_number).as_str()).white()
+                    String::title(format!("Run #{}", run_number).as_str()).white()
                 )
                 .unwrap();
                 writeln!(feedback).unwrap();

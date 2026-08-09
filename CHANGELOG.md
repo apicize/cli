@@ -1,5 +1,10 @@
 # Change Log
 
+## 0.38.0
+
+* Update duration handling to exclude test execution
+* Include duration in response test context
+
 ## 0.37.0
 
 * Remove CURL generation support
