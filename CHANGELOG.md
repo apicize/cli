@@ -1,5 +1,9 @@
 # Change Log
 
+## 0.38.1
+
+* Resolve handlebars replacement issue with escaped quotes
+
 ## 0.38.0
 
 * Update duration handling to exclude test execution
