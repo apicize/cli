@@ -1,5 +1,10 @@
 # Change Log
 
+## 0.39.0
+
+* Add setup script support
+* Fix panics for invalid OAuth URL and invalid header/value names
+
 ## 0.38.1
 
 * Resolve handlebars replacement issue with escaped quotes
