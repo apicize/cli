@@ -1,5 +1,9 @@
 # Change Log
 
+## 0.40.0
+
+* Add binary (btoa, atob, base64) helpers to test and setup scripts
+
 ## 0.39.0
 
 * Add setup script support
