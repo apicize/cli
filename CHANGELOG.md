@@ -1,5 +1,10 @@
 # Change Log
 
+## 0.41.0
+
+* Add support for multipart form with files
+* Fix disabled form body fields being sent with requests
+
 ## 0.40.0
 
 * Add binary (btoa, atob, base64) helpers to test and setup scripts
